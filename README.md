@@ -30,7 +30,7 @@ go get github.com/vertica/vertica-sql-go
 
 ## Usage
 
-As this library is written to Go's SQL standard, usage is compliant with its methods and behavioral expectations.
+As this library is written to Go's SQL standard [database/sql](https://golang.org/pkg/database/sql/), usage is compliant with its methods and behavioral expectations.
 
 ### Importing
 
