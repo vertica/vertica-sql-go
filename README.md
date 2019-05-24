@@ -234,4 +234,4 @@ Have a bug or an idea? Please see `CONTRIBUTING.md` for details.
 
 ## Acknowledgements
 
-We would like to thank the creators and contributors of the vertica-python library, and memebers of the Vertica team, for their help in understanding the wire protocol.
+We would like to thank the creators and contributors of the vertica-python library, and members of the Vertica team, for their help in understanding the wire protocol.
