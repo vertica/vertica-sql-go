@@ -221,7 +221,7 @@ The following transaction isolation levels are supported:
  * sql.LevelSnapshot
  * sql.LevelLinearizable
 
- <b>&#8224;</b> Although Vertica supports the grammars for various transaction isolation levels, some are internally promoted to stronger isolation levels.
+ <b>&#8224;</b> Although Vertica supports the grammars for these transaction isolation levels, they are internally promoted to stronger isolation levels.
 
 
 ## License
