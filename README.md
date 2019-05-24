@@ -221,7 +221,7 @@ The following transaction isolation levels are supported:
  * sql.LevelSnapshot
  * sql.LevelLinearizable
 
- <b>&#8224;</b> Although Vertica supports the grammars for various transaction isolation levels, some are internally promoted to stronger isolation levels.
+ <b>&#8224;</b> Although Vertica supports the grammars for these transaction isolation levels, they are internally promoted to stronger isolation levels.
 
 
 ## License
@@ -234,4 +234,4 @@ Have a bug or an idea? Please see `CONTRIBUTING.md` for details.
 
 ## Acknowledgements
 
-We would like to thank the creators and contributors of the vertica-python library, and memebers of the Vertica team, for their help in understanding the wire protocol.
+We would like to thank the creators and contributors of the vertica-python library, and members of the Vertica team, for their help in understanding the wire protocol.
