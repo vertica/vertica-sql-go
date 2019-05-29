@@ -1,6 +1,7 @@
 # vertica-sql-go
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg)](https://opensource.org/licenses/Apache-2.0)
+[![GoDoc](https://godoc.org/github.com/vertica/vertica-sql-go?status.svg)](https://godoc.org/github.com/vertica/vertica-sql-go)
 [![Go Report Card](https://goreportcard.com/badge/github.com/vertica/vertica-sql-go)](https://goreportcard.com/report/github.com/vertica/vertica-sql-go)
 
 vertica-sql-go is a native Go adapter for the Vertica (http://www.vertica.com) database.
