@@ -22,6 +22,15 @@ If you would like to implement the feature yourself, open an issue to ask before
 
 # Code Contributions
 
+## Configure Git for the first time
+
+Make sure git knows your [name](https://help.github.com/articles/setting-your-username-in-git/ "Set commit username in Git") and [email address](https://help.github.com/articles/setting-your-commit-email-address-in-git/ "Set commit email address in Git"):
+
+```shell
+git config --global user.name "John Smith"
+git config --global user.email "email@example.com"
+```
+
 ## Step 1: Fork
 
 Fork the project [on Github](https://github.com/vertica/vertica-sql-go) and check out your copy locally.
@@ -39,14 +48,9 @@ git remote add upstream git@github.com:vertica/vertica-sql-go.git
 git fetch upstream
 ```
 
-### Configure Git for the first time
+**NOTE:** If you are new to Go development and forking, here is an excellent blog post to read on managing import paths when forking: 
+http://code.openark.org/blog/development/forking-golang-repositories-on-github-and-managing-the-import-path
 
-Make sure git knows your [name](https://help.github.com/articles/setting-your-username-in-git/ "Set commit username in Git") and [email address](https://help.github.com/articles/setting-your-commit-email-address-in-git/ "Set commit email address in Git"):
-
-```shell
-git config --global user.name "John Smith"
-git config --global user.email "email@example.com"
-```
 
 ## Step 2: Branch
 
