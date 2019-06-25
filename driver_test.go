@@ -460,6 +460,26 @@ func TestTimestampParsers(t *testing.T) {
 	assertEqual(t, fmt.Sprintf("%s", val)[0:25], "2018-01-27 21:09:44 +0000")
 }
 
+func TestEmptyStatmentError(t *testing.T) {
+	connDB, err := sql.Open("vertica", myDBConnectString)
+	assertNoErr(t, err)
+
+	defer connDB.Close()
+
+	ctx := context.Background()
+
+	err = connDB.PingContext(ctx)
+	assertNoErr(t, err)
+
+	// Try as exec.
+	_, err = connDB.ExecContext(ctx, "")
+	assertErr(t, err, "empty statement")
+
+	// Try as query.
+	_, err = connDB.QueryContext(ctx, "")
+	assertErr(t, err, "empty statement")
+}
+
 func init() {
 	logger.SetLogLevel(logger.TRACE)
 
