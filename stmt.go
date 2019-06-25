@@ -69,13 +69,18 @@ type stmt struct {
 	paramTypes   []common.ParameterType
 }
 
-func newStmt(connection *connection, command string) *stmt {
+func newStmt(connection *connection, command string) (*stmt, error) {
+
+	if len(command) == 0 {
+		return nil, fmt.Errorf("cannot create an empty statement")
+	}
+
 	return &stmt{
 		conn:         connection,
 		command:      command,
 		preparedName: fmt.Sprintf("S%d%d%d", os.Getpid(), time.Now().Unix(), rand.Int31()),
 		parseState:   parseStateUnparsed,
-	}
+	}, nil
 }
 
 // Close closes this statement.

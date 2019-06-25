@@ -109,10 +109,14 @@ func (v *connection) Close() error {
 // From interface: sql.driver.ConnPrepareContext
 func (v *connection) PrepareContext(ctx context.Context, query string) (driver.Stmt, error) {
 
-	s := newStmt(v, query)
+	s, err := newStmt(v, query)
+
+	if err != nil {
+		return nil, err
+	}
 
 	if v.usePreparedStmts {
-		if err := s.prepareAndDescribe(); err != nil {
+		if err = s.prepareAndDescribe(); err != nil {
 			return nil, err
 		}
 	}
@@ -291,7 +295,11 @@ func (v *connection) handshake() error {
 // driver class.
 func (v *connection) initializeSession() error {
 
-	stmt := newStmt(v, "select now()::timestamptz")
+	stmt, err := newStmt(v, "select now()::timestamptz")
+
+	if err != nil {
+		return err
+	}
 
 	result, err := stmt.QueryContextRaw(context.Background(), []driver.NamedValue{})
 
