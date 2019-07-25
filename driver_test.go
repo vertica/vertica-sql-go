@@ -480,6 +480,28 @@ func TestEmptyStatmentError(t *testing.T) {
 	assertErr(t, err, "empty statement")
 }
 
+func TestNumericColumnType(t *testing.T) {
+	connDB, err := sql.Open("vertica", myDBConnectString)
+	assertNoErr(t, err)
+
+	defer connDB.Close()
+
+	ctx := context.Background()
+
+	err = connDB.PingContext(ctx)
+	assertNoErr(t, err)
+
+	rows, err := connDB.QueryContext(ctx, "SELECT (1/10000000000) as result")
+	assertNoErr(t, err)
+	assertNext(t, rows)
+
+	var resultFloat float64
+	rows.Scan(&resultFloat)
+	assertEqual(t, resultFloat, float64(0.0000000001))
+
+	rows.Close()
+}
+
 func init() {
 	logger.SetLogLevel(logger.TRACE)
 

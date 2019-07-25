@@ -42,6 +42,7 @@ const (
 	ColTypeVarChar       uint32 = 9
 	ColTypeTimestamp     uint32 = 12
 	ColTypeTimestampTZ   uint32 = 13
+	ColTypeNumeric       uint32 = 16
 	ColTypeVarBinary     uint32 = 17
 	ColTypeUUID          uint32 = 20
 	ColTypeLongVarChar   uint32 = 115
