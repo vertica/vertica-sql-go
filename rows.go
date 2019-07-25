@@ -116,7 +116,7 @@ func (r *rows) Next(dest []driver.Value) error {
 			} else {
 				dest[idx] = string(colVal)
 			}
-		case common.ColTypeFloat64: // to float64
+		case common.ColTypeFloat64, common.ColTypeNumeric: // to float64
 			if colVal == nil {
 				dest[idx] = sql.NullFloat64{}
 			} else {
