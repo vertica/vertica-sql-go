@@ -57,8 +57,6 @@ type rows struct {
 var emptyRowSet *rows
 var paddingString = "000000"
 
-var defaultRowCapacity = 128
-
 // Columns returns the names of all of the columns
 // Interface: driver.Rows
 func (r *rows) Columns() []string {
@@ -88,10 +86,7 @@ func (r *rows) Next(dest []driver.Value) error {
 
 	thisRow := r.resultData[r.readIndex]
 
-	//fmt.Println(thisRow.RowData)
-
 	for idx, colVal := range thisRow.RowData {
-		//fmt.Printf("col %d: type: %d: val:", idx, r.ColumnDefs.Columns[idx].DataTypeOID)
 
 		switch r.columnDefs.Columns[idx].DataTypeOID {
 		case common.ColTypeBoolean: // to boolean, why no ternary operator in Go?

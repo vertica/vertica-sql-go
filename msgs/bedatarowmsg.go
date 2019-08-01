@@ -44,14 +44,12 @@ func (b *BEDataRowMsg) CreateFromMsgBody(buf *msgBuffer) (BackEndMsg, error) {
 	res := &BEDataRowMsg{}
 
 	numCols := buf.readInt16()
-	//fmt.Printf("DataRow: has %d cols\n", numCols)
 
 	res.RowData = make([][]byte, numCols)
 
 	for i := int16(0); i < numCols; i++ {
 		size := buf.readInt32()
 		if size != -1 {
-			//fmt.Printf("DataRow: col %d of %d: size=%d\n", i+1, numCols, size)
 			res.RowData[i] = make([]byte, size)
 			buf.readBytes(res.RowData[i])
 		} else {

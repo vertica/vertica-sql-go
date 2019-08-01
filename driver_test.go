@@ -178,6 +178,9 @@ func TestBasicExec(t *testing.T) {
 	assertNoErr(t, err)
 	assertEqual(t, ct, int64(1))
 
+	_, err = res.LastInsertId()
+	assertNoErr(t, err)
+
 	_, err = connDB.ExecContext(ctx, "DROP TABLE MyTable")
 	assertNoErr(t, err)
 
@@ -238,7 +241,7 @@ func TestBasicArgsQuery(t *testing.T) {
 	var guitarist bool
 	var height float64
 	var birthday time.Time
-	rows.Scan(&id, &guitarist, &height, &birthday)
+	assertNoErr(t, rows.Scan(&id, &guitarist, &height, &birthday))
 
 	assertEqual(t, id, 21)
 	assertEqual(t, guitarist, true)
