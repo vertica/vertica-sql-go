@@ -80,7 +80,7 @@ func (b *BEErrorMsg) CreateFromMsgBody(buf *msgBuffer) (BackEndMsg, error) {
 }
 
 func (b *BEErrorMsg) String() string {
-	return fmt.Sprintf("Error: %s() [%s] %s", b.Routine, b.SQLCode, b.Message)
+	return fmt.Sprintf("Error: [%s] %s", b.SQLCode, b.Message)
 }
 
 func (b *BEErrorMsg) ToErrorType() error {
