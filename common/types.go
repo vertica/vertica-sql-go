@@ -91,6 +91,8 @@ func ColumnTypeString(typeOID uint32) string {
 		return "long varbinary"
 	case ColTypeBinary:
 		return "binary"
+	case ColTypeNumeric:
+		return "numeric"
 	}
 
 	return fmt.Sprintf("unknown column type oid: %d", typeOID)
