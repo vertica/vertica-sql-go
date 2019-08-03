@@ -95,12 +95,14 @@ func (v *connection) BeginTx(ctx context.Context, opts driver.TxOptions) (driver
 func (v *connection) Close() error {
 	connectionLogger.Trace("connection.Close()")
 
+	var result error = nil
+
 	if v.conn != nil {
-		v.conn.Close()
+		result = v.conn.Close()
 		v.conn = nil
 	}
 
-	return nil
+	return result
 }
 
 // PrepareContext returns a prepared statement, bound to this connection.
@@ -127,8 +129,6 @@ func (v *connection) PrepareContext(ctx context.Context, query string) (driver.S
 // Prepare returns a prepared statement, bound to this connection.
 // From interface: sql.driver.Conn
 func (v *connection) Prepare(query string) (driver.Stmt, error) {
-	// fmt.Println("Connection.Prepare()")
-
 	return v.PrepareContext(context.Background(), query)
 }
 
@@ -205,7 +205,6 @@ func (v *connection) recvMessage() (msgs.BackEndMsg, error) {
 		}
 
 		// Print the message to stdout (for debugging purposes)
-
 		if _, drm := bem.(*msgs.BEDataRowMsg); !drm {
 			connectionLogger.Debug("<- " + bem.String())
 		}
@@ -215,21 +214,34 @@ func (v *connection) recvMessage() (msgs.BackEndMsg, error) {
 }
 
 func (v *connection) sendMessage(msg msgs.FrontEndMsg) error {
+	var result error = nil
+
 	msgBytes, msgTag := msg.Flatten()
 
 	if msgTag != 0 {
-		v.conn.Write([]byte{msgTag})
+		_, result = v.conn.Write([]byte{msgTag})
 	}
 
-	sizeBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(sizeBytes, uint32(len(msgBytes)+4))
+	if result == nil {
+		sizeBytes := make([]byte, 4)
+		binary.BigEndian.PutUint32(sizeBytes, uint32(len(msgBytes)+4))
 
-	_, err := v.conn.Write(sizeBytes)
-	_, err = v.conn.Write(msgBytes)
+		_, result = v.conn.Write(sizeBytes)
 
-	connectionLogger.Debug("-> " + msg.String())
+		if result == nil {
+			_, result = v.conn.Write(msgBytes)
 
-	return err
+			if result == nil {
+				connectionLogger.Debug("-> " + msg.String())
+			}
+		}
+	}
+
+	if result != nil {
+		connectionLogger.Error("-> FAILED SENDING "+msg.String()+": %v", result.Error())
+	}
+
+	return result
 }
 
 func (v *connection) handshake() error {
@@ -328,7 +340,8 @@ func (v *connection) initializeSession() error {
 func (v *connection) defaultMessageHandler(bMsg msgs.BackEndMsg) (bool, error) {
 
 	handled := true
-	err := error(nil)
+
+	var err error = nil
 
 	switch msg := bMsg.(type) {
 	case *msgs.BEAuthenticationMsg:
@@ -336,11 +349,11 @@ func (v *connection) defaultMessageHandler(bMsg msgs.BackEndMsg) (bool, error) {
 		case common.AuthenticationOK:
 			break
 		case common.AuthenticationCleartextPassword:
-			v.authSendPlainTextPassword()
+			err = v.authSendPlainTextPassword()
 		case common.AuthenticationMD5Password:
-			v.authSendMD5Password(msg.ExtraAuthData)
+			err = v.authSendMD5Password(msg.ExtraAuthData)
 		case common.AuthenticationSHA512Password:
-			v.authSendSHA512Password(msg.ExtraAuthData)
+			err = v.authSendSHA512Password(msg.ExtraAuthData)
 		default:
 			handled = false
 			err = fmt.Errorf("unsupported authentication scheme: %d", msg.Response)
