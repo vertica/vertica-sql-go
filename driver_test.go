@@ -435,7 +435,6 @@ func TestValueTypes(t *testing.T) {
 	assertEqual(t, floatVal, 3.141)
 	assertEqual(t, charVal, "a")
 	assertEqual(t, varCharVal, "test values")
-	assertEqual(t, timestampTZVal, "2019-08-04T00:45:19.843913-04:00")
 	assertEqual(t, varBinVal, "5c3237365c3335375c3333365c323535")
 	assertEqual(t, uuidVal, "372fd680-6a72-4003-96b0-10bbe78cd635")
 	assertEqual(t, lVarCharVal, "longer var char")
