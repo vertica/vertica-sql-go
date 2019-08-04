@@ -153,15 +153,8 @@ func closeConnection(t *testing.T, connDB *sql.DB, teardownScript ...interface{}
 }
 
 func TestBasicQuery(t *testing.T) {
-	connDB, err := sql.Open("vertica", myDBConnectString)
-	assertNoErr(t, err)
-
-	defer connDB.Close()
-
-	ctx := context.Background()
-
-	err = connDB.PingContext(ctx)
-	assertNoErr(t, err)
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
 
 	rows, err := connDB.QueryContext(ctx, "SELECT * FROM v_monitor.cpu_usage LIMIT 5")
 	assertNoErr(t, err)
@@ -187,6 +180,8 @@ func TestBasicQuery(t *testing.T) {
 	rows2, err := connDB.QueryContext(ctx, "SELECT DISTINCT(keyword) FROM v_catalog.standard_keywords WHERE reserved='R' LIMIT 10")
 	assertNoErr(t, err)
 
+	defer rows2.Close()
+
 	for rows2.Next() {
 		var keyword string
 		assertNoErr(t, rows2.Scan(&keyword))
@@ -197,21 +192,8 @@ func TestBasicQuery(t *testing.T) {
 }
 
 func TestBasicExec(t *testing.T) {
-	connDB, err := sql.Open("vertica", myDBConnectString)
-	assertNoErr(t, err)
-
-	defer connDB.Close()
-
-	ctx := context.Background()
-
-	err = connDB.PingContext(ctx)
-	assertNoErr(t, err)
-
-	_, err = connDB.ExecContext(ctx, "DROP TABLE IF EXISTS MyTable")
-	assertNoErr(t, err)
-
-	_, err = connDB.ExecContext(ctx, "CREATE TABLE MyTable (id int, name varchar(64), PRIMARY KEY(id))")
-	assertNoErr(t, err)
+	connDB := openConnection(t, "test_basic_exec_pre")
+	defer closeConnection(t, connDB, "test_basic_exec_post")
 
 	res, err := connDB.ExecContext(ctx, "INSERT INTO MyTable VALUES (21, 'Joe Perry')")
 	assertNoErr(t, err)
@@ -222,31 +204,11 @@ func TestBasicExec(t *testing.T) {
 
 	_, err = res.LastInsertId()
 	assertNoErr(t, err)
-
-	_, err = connDB.ExecContext(ctx, "DROP TABLE MyTable")
-	assertNoErr(t, err)
-
-	assertNoErr(t, connDB.Close())
 }
 
 func TestBasicArgsQuery(t *testing.T) {
-	connDB, err := sql.Open("vertica", myDBConnectString)
-	assertNoErr(t, err)
-
-	defer connDB.Close()
-
-	ctx := context.Background()
-
-	err = connDB.PingContext(ctx)
-	assertNoErr(t, err)
-
-	_, err = connDB.ExecContext(ctx, "DROP TABLE IF EXISTS MyTable")
-	assertNoErr(t, err)
-
-	_, err = connDB.ExecContext(ctx, "CREATE TABLE MyTable"+
-		"(id int, name VARCHAR(64), guitarist BOOLEAN, height FLOAT, birthday TIMESTAMP,"+
-		" PRIMARY KEY(id))")
-	assertNoErr(t, err)
+	connDB := openConnection(t, "test_basic_args_query_pre")
+	defer closeConnection(t, connDB, "test_basic_args_query_post")
 
 	res, err := connDB.ExecContext(ctx, "INSERT INTO MyTable VALUES (21, 'Joe Perry', true, 123.45, '1950-09-10 13:59:47')")
 	assertNoErr(t, err)
@@ -264,12 +226,12 @@ func TestBasicArgsQuery(t *testing.T) {
 	assertNext(t, rows)
 
 	var nameStr string
-	rows.Scan(&nameStr)
+	assertNoErr(t, rows.Scan(&nameStr))
 
 	assertEqual(t, nameStr, "Joe Perry")
 	assertNoNext(t, rows)
 
-	rows.Close()
+	assertNoErr(t, rows.Close())
 
 	//-----------------------------------------------------------------------------------------
 	// Make sure we can run queries with an int, bool and float
@@ -303,7 +265,7 @@ func TestBasicArgsQuery(t *testing.T) {
 	assertNoErr(t, err)
 	assertNext(t, rows)
 
-	rows.Scan(&id)
+	assertNoErr(t, rows.Scan(&id))
 
 	assertEqual(t, id, 21)
 	assertNoNext(t, rows)
@@ -316,14 +278,7 @@ func TestBasicArgsQuery(t *testing.T) {
 	assertNoErr(t, err)
 	assertEqual(t, id, 21)
 
-	rows.Close()
-
-	// Drop the tables
-
-	_, err = connDB.ExecContext(ctx, "DROP TABLE MyTable")
-	assertNoErr(t, err)
-
-	assertNoErr(t, connDB.Close())
+	assertNoErr(t, rows.Close())
 }
 
 func TestTransaction(t *testing.T) {
@@ -443,6 +398,10 @@ func TestEmptyStatementError(t *testing.T) {
 func TestValueTypes(t *testing.T) {
 	connDB := openConnection(t, "test_value_types_pre")
 	defer closeConnection(t, connDB, "test_value_types_post")
+
+	//var boolVal bool
+	//var intVal int64
+	//var floatVal float64
 }
 
 func TestNumericColumnType(t *testing.T) {
