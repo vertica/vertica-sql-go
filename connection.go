@@ -303,7 +303,7 @@ func (v *connection) handshake() error {
 	}
 }
 
-// We have to be tricky here since we're inside of a connection, but tring to use interfaces of the
+// We have to be tricky here since we're inside of a connection, but trying to use interfaces of the
 // driver class.
 func (v *connection) initializeSession() error {
 
@@ -332,7 +332,7 @@ func (v *connection) initializeSession() error {
 
 	v.serverTZOffset = str[len(str)-3:]
 
-	connectionLogger.Info("Setting server timezone offset to %s", str[len(str)-3:])
+	connectionLogger.Debug("Setting server timezone offset to %s", str[len(str)-3:])
 
 	return nil
 }

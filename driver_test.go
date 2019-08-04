@@ -37,6 +37,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/user"
 	"strings"
@@ -56,7 +57,18 @@ var (
 	myDBConnectString  string
 	otherConnectString string
 	badConnectString   string
+	ctx                context.Context
 )
+
+func assertTrue(t *testing.T, v bool) {
+	t.Helper()
+
+	if v {
+		return
+	}
+
+	t.Fatal("value was not true")
+}
 
 func assertEqual(t *testing.T, a interface{}, b interface{}) {
 	t.Helper()
@@ -76,6 +88,25 @@ func assertNoErr(t *testing.T, e error) {
 	}
 
 	t.Fatal(e.Error())
+}
+
+func assertExecSQL(t *testing.T, connDB *sql.DB, script ...interface{}) {
+	t.Helper()
+
+	contents, err := ioutil.ReadFile(fmt.Sprintf("resources/tests/driver_test/%v.sql", script[0]))
+	strContents := fmt.Sprintf(string(contents), script[1:]...)
+
+	assertNoErr(t, err)
+
+	for _, cmd := range strings.Split(strContents, ";") {
+		trimmedCmd := strings.TrimSpace(cmd)
+
+		if len(trimmedCmd) > 0 {
+			testLogger.Debug("sending command: %s", trimmedCmd)
+			_, err = connDB.ExecContext(ctx, trimmedCmd)
+			assertNoErr(t, err)
+		}
+	}
 }
 
 func assertErr(t *testing.T, err error, errorSubstring string) {
@@ -110,16 +141,30 @@ func assertNoNext(t *testing.T, rows *sql.Rows) {
 	}
 }
 
-func TestBasicQuery(t *testing.T) {
+func openConnection(t *testing.T, setupScript ...interface{}) *sql.DB {
 	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 
-	defer connDB.Close()
-
-	ctx := context.Background()
-
 	err = connDB.PingContext(ctx)
 	assertNoErr(t, err)
+
+	if len(setupScript) > 0 {
+		assertExecSQL(t, connDB, setupScript...)
+	}
+
+	return connDB
+}
+
+func closeConnection(t *testing.T, connDB *sql.DB, teardownScript ...interface{}) {
+	if len(teardownScript) > 0 {
+		assertExecSQL(t, connDB, teardownScript...)
+	}
+	assertNoErr(t, connDB.Close())
+}
+
+func TestBasicQuery(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
 
 	rows, err := connDB.QueryContext(ctx, "SELECT * FROM v_monitor.cpu_usage LIMIT 5")
 	assertNoErr(t, err)
@@ -145,6 +190,8 @@ func TestBasicQuery(t *testing.T) {
 	rows2, err := connDB.QueryContext(ctx, "SELECT DISTINCT(keyword) FROM v_catalog.standard_keywords WHERE reserved='R' LIMIT 10")
 	assertNoErr(t, err)
 
+	defer rows2.Close()
+
 	for rows2.Next() {
 		var keyword string
 		assertNoErr(t, rows2.Scan(&keyword))
@@ -155,21 +202,8 @@ func TestBasicQuery(t *testing.T) {
 }
 
 func TestBasicExec(t *testing.T) {
-	connDB, err := sql.Open("vertica", myDBConnectString)
-	assertNoErr(t, err)
-
-	defer connDB.Close()
-
-	ctx := context.Background()
-
-	err = connDB.PingContext(ctx)
-	assertNoErr(t, err)
-
-	_, err = connDB.ExecContext(ctx, "DROP TABLE IF EXISTS MyTable")
-	assertNoErr(t, err)
-
-	_, err = connDB.ExecContext(ctx, "CREATE TABLE MyTable (id int, name varchar(64), PRIMARY KEY(id))")
-	assertNoErr(t, err)
+	connDB := openConnection(t, "test_basic_exec_pre")
+	defer closeConnection(t, connDB, "test_basic_exec_post")
 
 	res, err := connDB.ExecContext(ctx, "INSERT INTO MyTable VALUES (21, 'Joe Perry')")
 	assertNoErr(t, err)
@@ -180,31 +214,11 @@ func TestBasicExec(t *testing.T) {
 
 	_, err = res.LastInsertId()
 	assertNoErr(t, err)
-
-	_, err = connDB.ExecContext(ctx, "DROP TABLE MyTable")
-	assertNoErr(t, err)
-
-	assertNoErr(t, connDB.Close())
 }
 
 func TestBasicArgsQuery(t *testing.T) {
-	connDB, err := sql.Open("vertica", myDBConnectString)
-	assertNoErr(t, err)
-
-	defer connDB.Close()
-
-	ctx := context.Background()
-
-	err = connDB.PingContext(ctx)
-	assertNoErr(t, err)
-
-	_, err = connDB.ExecContext(ctx, "DROP TABLE IF EXISTS MyTable")
-	assertNoErr(t, err)
-
-	_, err = connDB.ExecContext(ctx, "CREATE TABLE MyTable"+
-		"(id int, name VARCHAR(64), guitarist BOOLEAN, height FLOAT, birthday TIMESTAMP,"+
-		" PRIMARY KEY(id))")
-	assertNoErr(t, err)
+	connDB := openConnection(t, "test_basic_args_query_pre")
+	defer closeConnection(t, connDB, "test_basic_args_query_post")
 
 	res, err := connDB.ExecContext(ctx, "INSERT INTO MyTable VALUES (21, 'Joe Perry', true, 123.45, '1950-09-10 13:59:47')")
 	assertNoErr(t, err)
@@ -222,12 +236,12 @@ func TestBasicArgsQuery(t *testing.T) {
 	assertNext(t, rows)
 
 	var nameStr string
-	rows.Scan(&nameStr)
+	assertNoErr(t, rows.Scan(&nameStr))
 
 	assertEqual(t, nameStr, "Joe Perry")
 	assertNoNext(t, rows)
 
-	rows.Close()
+	assertNoErr(t, rows.Close())
 
 	//-----------------------------------------------------------------------------------------
 	// Make sure we can run queries with an int, bool and float
@@ -261,7 +275,7 @@ func TestBasicArgsQuery(t *testing.T) {
 	assertNoErr(t, err)
 	assertNext(t, rows)
 
-	rows.Scan(&id)
+	assertNoErr(t, rows.Scan(&id))
 
 	assertEqual(t, id, 21)
 	assertNoNext(t, rows)
@@ -274,34 +288,12 @@ func TestBasicArgsQuery(t *testing.T) {
 	assertNoErr(t, err)
 	assertEqual(t, id, 21)
 
-	rows.Close()
-
-	// Drop the tables
-
-	_, err = connDB.ExecContext(ctx, "DROP TABLE MyTable")
-	assertNoErr(t, err)
-
-	assertNoErr(t, connDB.Close())
+	assertNoErr(t, rows.Close())
 }
 
 func TestTransaction(t *testing.T) {
-	connDB, err := sql.Open("vertica", myDBConnectString)
-	assertNoErr(t, err)
-
-	defer connDB.Close()
-
-	ctx := context.Background()
-
-	err = connDB.PingContext(ctx)
-	assertNoErr(t, err)
-
-	_, err = connDB.ExecContext(ctx, "DROP TABLE IF EXISTS MyTable")
-	assertNoErr(t, err)
-
-	_, err = connDB.ExecContext(ctx, "CREATE TABLE MyTable"+
-		"(id int, name VARCHAR(64), guitarist BOOLEAN, height FLOAT, birthday TIMESTAMP,"+
-		" PRIMARY KEY(id))")
-	assertNoErr(t, err)
+	connDB := openConnection(t, "test_transaction_pre")
+	defer closeConnection(t, connDB, "test_transaction_post")
 
 	res, err := connDB.ExecContext(ctx, "INSERT INTO MyTable VALUES (21, 'Joe Perry', true, 123.45, '1950-09-10 13:59:47')")
 	assertNoErr(t, err)
@@ -326,45 +318,18 @@ func TestTransaction(t *testing.T) {
 	tx, err = connDB.BeginTx(ctx, opts)
 	assertNoErr(t, err)
 	assertNoErr(t, tx.Rollback())
-
-	// TODO: Do actual testing of content during/after different transactions.
-
-	_, err = connDB.ExecContext(ctx, "DROP TABLE MyTable")
-	assertNoErr(t, err)
-	assertNoErr(t, connDB.Close())
 }
 
 func TestPWAuthentication(t *testing.T) {
-	connDB, err := sql.Open("vertica", myDBConnectString)
-	assertNoErr(t, err)
-
-	defer connDB.Close()
-
-	ctx := context.Background()
-
-	err = connDB.PingContext(ctx)
-	assertNoErr(t, err)
-
-	// Remove user if needed.
-	_, err = connDB.ExecContext(ctx, "DROP USER IF EXISTS TestGuy")
-	assertNoErr(t, err)
-
-	// Create a new user.
-	_, err = connDB.ExecContext(ctx, "CREATE USER TestGuy IDENTIFIED BY 'TestGuyPass'")
-	assertNoErr(t, err)
-
-	// Grant user some access
-	_, err = connDB.ExecContext(ctx, "GRANT USAGE ON SCHEMA PUBLIC to TestGuy")
-	assertNoErr(t, err)
+	connDB := openConnection(t, "test_pw_authentication_pre")
+	defer closeConnection(t, connDB, "test_pw_authentication_post")
 
 	// Let the user try to login now.
 	connDB2, err := sql.Open("vertica", otherConnectString)
 	assertNoErr(t, err)
 
-	err = connDB2.PingContext(ctx)
-	assertNoErr(t, err)
-
-	connDB2.Close()
+	assertNoErr(t, connDB2.PingContext(ctx))
+	assertNoErr(t, connDB2.Close())
 
 	// Try it again with a bad password
 	connDB3, err := sql.Open("vertica", badConnectString)
@@ -372,49 +337,14 @@ func TestPWAuthentication(t *testing.T) {
 
 	err = connDB3.PingContext(ctx)
 
-	if err != nil && err.Error() != "EOF" {
-		assertErr(t, err, "Invalid username or password")
-	}
+	assertErr(t, err, "Invalid username or password")
 
-	connDB3.Close()
+	assertNoErr(t, connDB3.Close())
 }
 
 func testAnAuthScheme(t *testing.T, scheme string) {
-	connDB, err := sql.Open("vertica", myDBConnectString)
-	assertNoErr(t, err)
-
-	defer connDB.Close()
-
-	ctx := context.Background()
-
-	err = connDB.PingContext(ctx)
-	assertNoErr(t, err)
-
-	// Create authentication hash.
-	_, err = connDB.ExecContext(ctx, "CREATE AUTHENTICATION v_hash METHOD 'hash' HOST '10.0.0.0/0'")
-	assertNoErr(t, err)
-
-	// Autodrop all authentication stuff.
-	defer connDB.ExecContext(ctx, "DROP AUTHENTICATION v_hash CASCADE")
-
-	// Remove user if needed.
-	_, err = connDB.ExecContext(ctx, "DROP USER IF EXISTS TestGuy")
-	assertNoErr(t, err)
-
-	// Create a new user.
-	_, err = connDB.ExecContext(ctx, "CREATE USER TestGuy IDENTIFIED BY 'TestGuyPassBad'")
-	assertNoErr(t, err)
-
-	// Alter him to require MD5
-	_, err = connDB.ExecContext(ctx, "ALTER USER TestGuy SECURITY_ALGORITHM '"+scheme+"' IDENTIFIED BY 'TestGuyPass'")
-	assertNoErr(t, err)
-
-	// Grant user some access
-	_, err = connDB.ExecContext(ctx, "GRANT USAGE ON SCHEMA PUBLIC to TestGuy")
-	assertNoErr(t, err)
-
-	_, err = connDB.ExecContext(ctx, "GRANT AUTHENTICATION v_hash to TestGuy")
-	assertNoErr(t, err)
+	connDB := openConnection(t, "test_an_auth_scheme_pre", scheme)
+	defer closeConnection(t, connDB, "test_an_auth_scheme_post")
 
 	// Let the user try to login now.
 	connDB2, err := sql.Open("vertica", otherConnectString)
@@ -422,8 +352,7 @@ func testAnAuthScheme(t *testing.T, scheme string) {
 
 	err = connDB2.PingContext(ctx)
 	assertNoErr(t, err)
-
-	connDB2.Close()
+	assertNoErr(t, connDB2.Close())
 
 	// Try it again with a bad password
 	connDB3, err := sql.Open("vertica", badConnectString)
@@ -434,7 +363,7 @@ func testAnAuthScheme(t *testing.T, scheme string) {
 		assertErr(t, err, "Invalid username or password")
 	}
 
-	connDB3.Close()
+	assertNoErr(t, connDB3.Close())
 }
 
 func TestMD5Authentication(t *testing.T) {
@@ -463,19 +392,12 @@ func TestTimestampParsers(t *testing.T) {
 	assertEqual(t, fmt.Sprintf("%s", val)[0:25], "2018-01-27 21:09:44 +0000")
 }
 
-func TestEmptyStatmentError(t *testing.T) {
-	connDB, err := sql.Open("vertica", myDBConnectString)
-	assertNoErr(t, err)
-
-	defer connDB.Close()
-
-	ctx := context.Background()
-
-	err = connDB.PingContext(ctx)
-	assertNoErr(t, err)
+func TestEmptyStatementError(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
 
 	// Try as exec.
-	_, err = connDB.ExecContext(ctx, "")
+	_, err := connDB.ExecContext(ctx, "")
 	assertErr(t, err, "empty statement")
 
 	// Try as query.
@@ -483,30 +405,80 @@ func TestEmptyStatmentError(t *testing.T) {
 	assertErr(t, err, "empty statement")
 }
 
-func TestNumericColumnType(t *testing.T) {
-	connDB, err := sql.Open("vertica", myDBConnectString)
-	assertNoErr(t, err)
+func TestValueTypes(t *testing.T) {
+	connDB := openConnection(t, "test_value_types_pre")
+	defer closeConnection(t, connDB, "test_value_types_post")
 
-	defer connDB.Close()
+	var (
+		boolVal        bool
+		intVal         int
+		floatVal       float64
+		charVal        string
+		varCharVal     string
+		timestampVal   string
+		timestampTZVal string
+		varBinVal      string
+		uuidVal        string
+		lVarCharVal    string
+		lVarBinaryVal  string
+		binaryVal      string
+		numericVal     float64
+	)
 
-	ctx := context.Background()
-
-	err = connDB.PingContext(ctx)
-	assertNoErr(t, err)
-
-	rows, err := connDB.QueryContext(ctx, "SELECT (1/10000000000) as result")
+	rows, err := connDB.QueryContext(ctx, "SELECT * FROM full_type_table")
 	assertNoErr(t, err)
 	assertNext(t, rows)
+	assertNoErr(t, rows.Scan(&boolVal, &intVal, &floatVal, &charVal, &varCharVal, &timestampVal, &timestampTZVal,
+		&varBinVal, &uuidVal, &lVarCharVal, &lVarBinaryVal, &binaryVal, &numericVal))
+	assertEqual(t, boolVal, true)
+	assertEqual(t, intVal, 123)
+	assertEqual(t, floatVal, 3.141)
+	assertEqual(t, charVal, "a")
+	assertEqual(t, varCharVal, "test values")
+	assertEqual(t, varBinVal, "5c3237365c3335375c3333365c323535")
+	assertEqual(t, uuidVal, "372fd680-6a72-4003-96b0-10bbe78cd635")
+	assertEqual(t, lVarCharVal, "longer var char")
+	assertEqual(t, lVarBinaryVal, "5c3333365c3235355c3237365c333537")
+	assertEqual(t, binaryVal, "5c323732")
+	assertEqual(t, numericVal, 1.2345)
 
-	var resultFloat float64
-	rows.Scan(&resultFloat)
-	assertEqual(t, resultFloat, float64(0.0000000001))
+	assertNext(t, rows)
+	nils := make([]interface{}, 13)
+	assertNoErr(t, rows.Scan(&nils[0], &nils[1], &nils[2], &nils[3], &nils[4], &nils[5], &nils[6], &nils[7],
+		&nils[8], &nils[9], &nils[10], &nils[11], &nils[12]))
 
-	rows.Close()
+	_, ok := nils[0].(sql.NullBool)
+	assertTrue(t, ok)
+	_, ok = nils[1].(sql.NullInt64)
+	assertTrue(t, ok)
+	_, ok = nils[2].(sql.NullFloat64)
+	assertTrue(t, ok)
+	_, ok = nils[3].(sql.NullString)
+	assertTrue(t, ok)
+	_, ok = nils[4].(sql.NullString)
+	assertTrue(t, ok)
+	_, ok = nils[5].(sql.NullString)
+	assertTrue(t, ok)
+	_, ok = nils[6].(sql.NullString)
+	assertTrue(t, ok)
+	_, ok = nils[7].(sql.NullString)
+	assertTrue(t, ok)
+	_, ok = nils[8].(sql.NullString)
+	assertTrue(t, ok)
+	_, ok = nils[9].(sql.NullString)
+	assertTrue(t, ok)
+	_, ok = nils[10].(sql.NullString)
+	assertTrue(t, ok)
+	_, ok = nils[11].(sql.NullString)
+	assertTrue(t, ok)
+	_, ok = nils[12].(sql.NullFloat64)
+	assertTrue(t, ok)
+
+	assertNoErr(t, rows.Close())
 }
 
 func init() {
-	logger.SetLogLevel(logger.TRACE)
+	logger.SetLogLevel(logger.INFO)
 
 	userObj, _ := user.Current()
 
@@ -538,4 +510,6 @@ func init() {
 	myDBConnectString = "vertica://" + verticaUserName + ":" + verticaPassword + "@" + verticaHostPort + "/" + verticaUserName + "?" + usePreparedStmtsString + "&ssl=" + sslMode
 	otherConnectString = "vertica://TestGuy:TestGuyPass@" + verticaHostPort + "/TestGuy?tlsmode=" + sslMode
 	badConnectString = "vertica://TestGuy:TestGuyBadPass@" + verticaHostPort + "/TestGuy?tlsmode=" + sslMode
+
+	ctx = context.Background()
 }
