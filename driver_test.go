@@ -60,6 +60,16 @@ var (
 	ctx                context.Context
 )
 
+func assertTrue(t *testing.T, v bool) {
+	t.Helper()
+
+	if v {
+		return
+	}
+
+	t.Fatal("value was not true")
+}
+
 func assertEqual(t *testing.T, a interface{}, b interface{}) {
 	t.Helper()
 
@@ -399,22 +409,71 @@ func TestValueTypes(t *testing.T) {
 	connDB := openConnection(t, "test_value_types_pre")
 	defer closeConnection(t, connDB, "test_value_types_post")
 
-	//var boolVal bool
-	//var intVal int64
-	//var floatVal float64
-}
+	var (
+		boolVal        bool
+		intVal         int
+		floatVal       float64
+		charVal        string
+		varCharVal     string
+		timestampVal   string
+		timestampTZVal string
+		varBinVal      string
+		uuidVal        string
+		lVarCharVal    string
+		lVarBinaryVal  string
+		binaryVal      string
+		numericVal     float64
+	)
 
-func TestNumericColumnType(t *testing.T) {
-	connDB := openConnection(t)
-	defer closeConnection(t, connDB)
-
-	rows, err := connDB.QueryContext(ctx, "SELECT (1/10000000000) as result")
+	rows, err := connDB.QueryContext(ctx, "SELECT * FROM full_type_table")
 	assertNoErr(t, err)
 	assertNext(t, rows)
+	assertNoErr(t, rows.Scan(&boolVal, &intVal, &floatVal, &charVal, &varCharVal, &timestampVal, &timestampTZVal,
+		&varBinVal, &uuidVal, &lVarCharVal, &lVarBinaryVal, &binaryVal, &numericVal))
+	assertEqual(t, boolVal, true)
+	assertEqual(t, intVal, 123)
+	assertEqual(t, floatVal, 3.141)
+	assertEqual(t, charVal, "a")
+	assertEqual(t, varCharVal, "test values")
+	assertEqual(t, timestampTZVal, "2019-08-04T00:45:19.843913-04:00")
+	assertEqual(t, varBinVal, "5c3237365c3335375c3333365c323535")
+	assertEqual(t, uuidVal, "372fd680-6a72-4003-96b0-10bbe78cd635")
+	assertEqual(t, lVarCharVal, "longer var char")
+	assertEqual(t, lVarBinaryVal, "5c3333365c3235355c3237365c333537")
+	assertEqual(t, binaryVal, "5c323732")
+	assertEqual(t, numericVal, 1.2345)
 
-	var resultFloat float64
-	assertNoErr(t, rows.Scan(&resultFloat))
-	assertEqual(t, resultFloat, 0.0000000001)
+	assertNext(t, rows)
+	nils := make([]interface{}, 13)
+	assertNoErr(t, rows.Scan(&nils[0], &nils[1], &nils[2], &nils[3], &nils[4], &nils[5], &nils[6], &nils[7],
+		&nils[8], &nils[9], &nils[10], &nils[11], &nils[12]))
+
+	_, ok := nils[0].(sql.NullBool)
+	assertTrue(t, ok)
+	_, ok = nils[1].(sql.NullInt64)
+	assertTrue(t, ok)
+	_, ok = nils[2].(sql.NullFloat64)
+	assertTrue(t, ok)
+	_, ok = nils[3].(sql.NullString)
+	assertTrue(t, ok)
+	_, ok = nils[4].(sql.NullString)
+	assertTrue(t, ok)
+	_, ok = nils[5].(sql.NullString)
+	assertTrue(t, ok)
+	_, ok = nils[6].(sql.NullString)
+	assertTrue(t, ok)
+	_, ok = nils[7].(sql.NullString)
+	assertTrue(t, ok)
+	_, ok = nils[8].(sql.NullString)
+	assertTrue(t, ok)
+	_, ok = nils[9].(sql.NullString)
+	assertTrue(t, ok)
+	_, ok = nils[10].(sql.NullString)
+	assertTrue(t, ok)
+	_, ok = nils[11].(sql.NullString)
+	assertTrue(t, ok)
+	_, ok = nils[12].(sql.NullFloat64)
+	assertTrue(t, ok)
 
 	assertNoErr(t, rows.Close())
 }

@@ -35,6 +35,7 @@ package vertigo
 import (
 	"database/sql"
 	"database/sql/driver"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"strconv"
@@ -89,7 +90,7 @@ func (r *rows) Next(dest []driver.Value) error {
 	for idx, colVal := range thisRow.RowData {
 
 		switch r.columnDefs.Columns[idx].DataTypeOID {
-		case common.ColTypeBoolean: // to boolean, why no ternary operator in Go?
+		case common.ColTypeBoolean: // to boolean
 			if colVal == nil {
 				dest[idx] = sql.NullBool{}
 			} else {
@@ -119,18 +120,22 @@ func (r *rows) Next(dest []driver.Value) error {
 			}
 		case common.ColTypeTimestamp: // to time.Time from YYYY-MM-DD hh:mm:ss
 			if colVal == nil {
-				dest[idx] = nil
+				dest[idx] = sql.NullString{}
 			} else {
 				dest[idx], _ = parseTimestampTZColumn(string(colVal) + r.tzOffset)
 			}
 		case common.ColTypeTimestampTZ:
 			if colVal == nil {
-				dest[idx] = nil
+				dest[idx] = sql.NullString{}
 			} else {
 				dest[idx], _ = parseTimestampTZColumn(string(colVal))
 			}
 		case common.ColTypeVarBinary, common.ColTypeLongVarBinary, common.ColTypeBinary: // to []byte - this one's easy
-			dest[idx] = colVal
+			if colVal == nil {
+				dest[idx] = sql.NullString{}
+			} else {
+				dest[idx] = hex.EncodeToString(colVal)
+			}
 		default:
 			if colVal == nil {
 				dest[idx] = sql.NullString{}
