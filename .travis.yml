@@ -11,7 +11,6 @@ go:
 go_import_path: github.com/vertica/vertica-sql-go
   
 before_install:
-  - export VERTICA_CE_URL="https://s3.amazonaws.com/vertica-community-edition-for-testing/XCz9cp7m/vertica-9.1.1-0.x86_64.RHEL6.rpm"
   - git clone https://github.com/jbfavre/docker-vertica.git
   - curl $VERTICA_CE_URL --create-dirs -o docker-vertica/packages/vertica-ce.latest.rpm
   - docker build -f docker-vertica/Dockerfile.centos.7_9.x --build-arg VERTICA_PACKAGE=vertica-ce.latest.rpm -t jbfavre/vertica docker-vertica
