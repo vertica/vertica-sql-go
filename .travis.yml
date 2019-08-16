@@ -15,10 +15,15 @@ before_install:
   - curl $VERTICA_CE_URL --create-dirs -o docker-vertica/packages/vertica-ce.latest.rpm
   - docker build -f docker-vertica/Dockerfile.centos.7_9.x --build-arg VERTICA_PACKAGE=vertica-ce.latest.rpm -t jbfavre/vertica docker-vertica
   - docker images
-  - docker run -d -p 5433:5433 jbfavre/vertica
+  - docker run --name vertica_docker -d -p 5433:5433 jbfavre/vertica
   - sleep 60
 
 script:
   - go test --locator localhost:5433 --user dbadmin -race .
   - go test --locator localhost:5433 --user dbadmin --use_prepared_statements=0 -race .
   - go test -race ./logger
+  - docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "ALTER DATABASE docker SET EnableSSL=1;"
+  - docker exec -u dbadmin vertica_docker /opt/vertica/bin/admintools --tool stop_db --database docker
+  - docker exec -u dbadmin vertica_docker /opt/vertica/bin/admintools --tool start_db --database docker
+  - go test --locator localhost:5433 --user dbadmin --tls=server -race .
+  - go test --locator localhost:5433 --user dbadmin --tls=server --use_prepared_statements=0 -race .
