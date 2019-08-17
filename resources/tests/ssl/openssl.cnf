@@ -20,9 +20,9 @@ commonName = Common Name (hostname, IP, or your name)
 commonName_max = 64
 #-------------------Edit this section------------------------------
 countryName_default     = US
-stateOrProvinceName_default = CA
-localityName_default        = San Francisco
-0.organizationName_default  = example_company
+stateOrProvinceName_default = TX
+localityName_default        = Houston
+0.organizationName_default  = Micro Focus
 organizationalUnitName_default  = Information Systems
-commonName_default          = server_name
+commonName_default          = localhost
 emailAddress_default            = admin@example.com
