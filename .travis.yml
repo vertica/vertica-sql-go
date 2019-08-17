@@ -29,5 +29,5 @@ script:
   - docker exec -u dbadmin vertica_docker /opt/vertica/bin/admintools --tool start_db --database docker
   - go test --locator localhost:5433 --user dbadmin --tlsmode=server -race .
   - go test --locator localhost:5433 --user dbadmin --tlsmode=server --use_prepared_statements=0 -race .
-  - go test --locator localhost:5433 --user dbadmin --tlsmode=server-strict -race .
-  - go test --locator localhost:5433 --user dbadmin --tlsmode=server-strict --use_prepared_statements=0 -race .
+  # go test --locator localhost:5433 --user dbadmin --tlsmode=server-strict -race .
+  # go test --locator localhost:5433 --user dbadmin --tlsmode=server-strict --use_prepared_statements=0 -race .
