@@ -24,6 +24,7 @@ script:
   - go test -race ./logger
   - docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "SELECT SET_CONFIG_PARAMETER('SSLPrivateKey', '`cat ./resources/tests/ssl/root.key`');"
   - docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "SELECT SET_CONFIG_PARAMETER('SSLCertificate', '`cat ./resources/tests/ssl/root.crt`');"
+  - docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "ALTER DATABASE docker SET SSLCA='`cat ./resources/tests/ssl/root.crt`';"
   - docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "ALTER DATABASE docker SET EnableSSL=1;"
   - docker exec -u dbadmin vertica_docker /opt/vertica/bin/admintools --tool stop_db --database docker
   - docker exec -u dbadmin vertica_docker /opt/vertica/bin/admintools --tool start_db --database docker
