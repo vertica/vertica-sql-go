@@ -67,6 +67,7 @@ type stmt struct {
 	preparedName string
 	parseState   parseState
 	paramTypes   []common.ParameterType
+	lastRowDesc  *msgs.BERowDescMsg
 }
 
 func newStmt(connection *connection, command string) (*stmt, error) {
@@ -176,7 +177,7 @@ func (s *stmt) QueryContextRaw(ctx context.Context, args []driver.NamedValue) (*
 		return s.collectResults()
 	}
 
-	// We aren't a prepared statement, manually interpolate and do as a simpe query.
+	// We aren't a prepared statement, manually interpolate and do as a simple query.
 	cmd, err = s.interpolate(args)
 
 	if err != nil {
@@ -196,9 +197,12 @@ func (s *stmt) QueryContextRaw(ctx context.Context, args []driver.NamedValue) (*
 
 		switch msg := bMsg.(type) {
 		case *msgs.BEDataRowMsg:
+			if rows == emptyRowSet {
+				rows = newRows(s.lastRowDesc, s.conn.serverTZOffset)
+			}
 			rows.addRow(msg)
 		case *msgs.BERowDescMsg:
-			rows = newRows(msg, s.conn.serverTZOffset)
+			s.lastRowDesc = msg
 		case *msgs.BECmdCompleteMsg:
 			break
 		case *msgs.BEErrorMsg:
@@ -341,9 +345,12 @@ func (s *stmt) collectResults() (*rows, error) {
 
 		switch msg := bMsg.(type) {
 		case *msgs.BEDataRowMsg:
+			if rows == emptyRowSet {
+				rows = newRows(s.lastRowDesc, s.conn.serverTZOffset)
+			}
 			rows.addRow(msg)
 		case *msgs.BERowDescMsg:
-			rows = newRows(msg, s.conn.serverTZOffset)
+			s.lastRowDesc = msg
 		case *msgs.BEErrorMsg:
 			return emptyRowSet, msg.ToErrorType()
 		case *msgs.BEEmptyQueryResponseMsg:
