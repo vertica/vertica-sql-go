@@ -122,7 +122,7 @@ func assertErr(t *testing.T, err error, errorSubstring string) {
 		return
 	}
 
-	t.Fatalf("expected an error, but it was '%s' instead of containing '%s'", errStr, errorSubstring)
+	t.Fatalf("expected an error containing '%s', but found '%s'", errorSubstring, errStr)
 }
 
 func assertNext(t *testing.T, rows *sql.Rows) {
@@ -475,6 +475,38 @@ func TestValueTypes(t *testing.T) {
 	assertTrue(t, ok)
 
 	assertNoErr(t, rows.Close())
+}
+
+func TestStmtReuseBug(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+
+	var res bool
+
+	stmt, err := connDB.PrepareContext(ctx, "SELECT true AS res")
+	assertNoErr(t, err)
+
+	// first call
+	rows, err := stmt.QueryContext(ctx)
+	assertNoErr(t, err)
+
+	defer rows.Close()
+
+	assertNext(t, rows)
+	assertNoErr(t, rows.Scan(&res))
+	assertEqual(t, res, true)
+	assertNoNext(t, rows)
+
+	// second call
+	rows, err = stmt.QueryContext(ctx)
+	assertNoErr(t, err)
+
+	defer rows.Close()
+
+	assertNext(t, rows)
+	assertNoErr(t, rows.Scan(&res))
+	assertEqual(t, res, true)
+	assertNoNext(t, rows)
 }
 
 func init() {
