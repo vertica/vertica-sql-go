@@ -510,7 +510,7 @@ func TestStmtReuseBug(t *testing.T) {
 }
 
 func init() {
-	logger.SetLogLevel(logger.DEBUG)
+	logger.SetLogLevel(logger.INFO)
 
 	userObj, _ := user.Current()
 
