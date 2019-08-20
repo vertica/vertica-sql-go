@@ -477,8 +477,41 @@ func TestValueTypes(t *testing.T) {
 	assertNoErr(t, rows.Close())
 }
 
+
+func TestStmtReuseBug(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+
+	var res bool
+
+	stmt, err := connDB.PrepareContext(ctx, "SELECT true AS res")
+	if err != nil {
+		os.Exit(1)
+	}
+
+	// first call
+	rows, err := stmt.QueryContext(ctx)
+	if err != nil {
+		os.Exit(1)
+	}
+
+	for rows.Next() {
+		testLogger.Info("first use of stmt: %t", res) // succeeds
+	}
+
+	// second call
+	rows, err = stmt.QueryContext(ctx)
+	if err != nil {
+		os.Exit(1)
+	}
+
+	for rows.Next() {    // <- throws
+		testLogger.Info("second use of stmt: %t", res)
+	}
+}
+
 func init() {
-	logger.SetLogLevel(logger.INFO)
+	logger.SetLogLevel(logger.DEBUG)
 
 	userObj, _ := user.Current()
 
