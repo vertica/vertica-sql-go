@@ -161,8 +161,6 @@ func (s *stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driv
 func (s *stmt) QueryContextRaw(ctx context.Context, args []driver.NamedValue) (*rows, error) {
 	stmtLogger.Debug("stmt.QueryContextRaw(): %s", s.command)
 
-	rows := emptyRowSet
-
 	var cmd string
 	var err error
 	var portalName string
@@ -175,6 +173,8 @@ func (s *stmt) QueryContextRaw(ctx context.Context, args []driver.NamedValue) (*
 
 		return s.collectResults()
 	}
+
+	rows := emptyRowSet
 
 	// We aren't a prepared statement, manually interpolate and do as a simple query.
 	cmd, err = s.interpolate(args)
@@ -196,12 +196,9 @@ func (s *stmt) QueryContextRaw(ctx context.Context, args []driver.NamedValue) (*
 
 		switch msg := bMsg.(type) {
 		case *msgs.BEDataRowMsg:
-			if rows == emptyRowSet {
-				rows = newRows(s.lastRowDesc, s.conn.serverTZOffset)
-			}
 			rows.addRow(msg)
 		case *msgs.BERowDescMsg:
-			s.lastRowDesc = msg
+			rows = newRows(msg, s.conn.serverTZOffset)
 		case *msgs.BECmdCompleteMsg:
 			break
 		case *msgs.BEErrorMsg:
@@ -335,6 +332,10 @@ func (s *stmt) bindAndExecute(portalName string, args []driver.NamedValue) error
 func (s *stmt) collectResults() (*rows, error) {
 	rows := emptyRowSet
 
+	if s.lastRowDesc != nil {
+		rows = newRows(s.lastRowDesc, s.conn.serverTZOffset)
+	}
+
 	for {
 		bMsg, err := s.conn.recvMessage()
 
@@ -344,12 +345,10 @@ func (s *stmt) collectResults() (*rows, error) {
 
 		switch msg := bMsg.(type) {
 		case *msgs.BEDataRowMsg:
-			if rows == emptyRowSet {
-				rows = newRows(s.lastRowDesc, s.conn.serverTZOffset)
-			}
 			rows.addRow(msg)
 		case *msgs.BERowDescMsg:
 			s.lastRowDesc = msg
+			rows = newRows(s.lastRowDesc, s.conn.serverTZOffset)
 		case *msgs.BEErrorMsg:
 			return emptyRowSet, msg.ToErrorType()
 		case *msgs.BEEmptyQueryResponseMsg:
