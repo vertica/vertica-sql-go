@@ -509,6 +509,23 @@ func TestStmtReuseBug(t *testing.T) {
 	assertNoNext(t, rows)
 }
 
+// Issue #20 - test by @grzm
+func TestColumnsWithNoRows(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+
+	stmt, err := connDB.PrepareContext(ctx, "SELECT true AS res WHERE false")
+	assertNoErr(t, err)
+	rows, err := stmt.QueryContext(ctx)
+	assertNoErr(t, err)
+
+	columns, err := rows.Columns()
+	assertNoErr(t, err)
+	assertEqual(t, len(columns), 1) // this fails
+
+	assertNoNext(t, rows)
+}
+
 func init() {
 	logger.SetLogLevel(logger.INFO)
 
