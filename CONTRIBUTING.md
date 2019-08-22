@@ -89,11 +89,28 @@ were args are one of the following:
 
 For example:
 
-```sh
+```shell script
 export VERTICA_TEST_PASSWORD=mypassword
-go test --locator hostname:5433 --user rhuebner --ssl server
+go test --locator hostname:5433 --user rhuebner --tlsmode server
+```
+You should run the test suite under multiple configurations (local interpolation vs. prepared statements, SSL vs plain, etc.)
+
+For example:
+
+```shell script
+export VERTICA_TEST_PASSWORD=mypassword
+
+# Against a plain connection.
+go test --locator hostname:5433 --user rhuebner --tlsmode none --use_prepared_statements true
+go test --locator hostname:5433 --user rhuebner --tlsmode none --use_prepared_statements false
+
+# Against an SSL-enabled server.
+go test --locator hostname:5433 --user rhuebner --tlsmode server --use_prepared_statements true
+go test --locator hostname:5433 --user rhuebner --tlsmode server --use_prepared_statements false
 ```
 
+The Travis CI configuration committed as part of the project will automatically run through several combinations of parameters.
+These CI tests must pass before any PR will be considered.
 
 ## Step 4: Implement your fix or feature
 
