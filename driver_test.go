@@ -513,12 +513,15 @@ func TestCopyLocal(t *testing.T) {
 	connDB := openConnection(t, "test_copy_local_pre")
 	defer closeConnection(t, connDB, "test_copy_local_post")
 
-	_, err := connDB.ExecContext(ctx, "COPY csv_values FROM LOCAL './resources/csv/sample_data.csv', '/etc/txt'")
+	_, err := connDB.ExecContext(
+		ctx,
+		"COPY csv_values FROM LOCAL './resources/csv/sample_data.csv'")
+
 	assertNoErr(t, err)
 }
 
 func init() {
-	logger.SetLogLevel(logger.TRACE)
+	logger.SetLogLevel(logger.DEBUG)
 
 	userObj, _ := user.Current()
 

@@ -357,8 +357,34 @@ func (s *stmt) collectResults() (*rows, error) {
 			return emptyRowSet, nil
 		case *msgs.BEBindCompleteMsg:
 			break
+		case *msgs.BEVerifyLoadFilesMsg:
+			_, _ = s.handleCopyLocal(msg.FileList, msg.RejectedPath, msg.ExceptionsPath)
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg, *msgs.BECmdCompleteMsg:
 			return rows, nil
+		default:
+			_, _ = s.conn.defaultMessageHandler(msg)
 		}
 	}
+}
+
+func (s *stmt) handleCopyLocal(fileList []string, rejectedPath string, exceptionsPath string) (*rows, error) {
+
+	sizes, err := common.GetReadableFileSizes(fileList)
+
+	if err != nil {
+		_ = s.conn.sendMessage(&msgs.FEErrorMsg{
+			FileName:   common.CurrentFile(),
+			LineNumber: common.CurrentLine(),
+			Method:     "handleCopyLocal",
+			ErrorMsg:   err.Error(),
+		})
+
+		return emptyRowSet, err
+	}
+
+	if err = s.conn.sendMessage(&msgs.FEVerifyLoadFiles{FileNames: fileList, FileSizes: sizes}); err != nil {
+		return emptyRowSet, err
+	}
+
+	return emptyRowSet, nil
 }
