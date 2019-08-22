@@ -162,6 +162,18 @@ func closeConnection(t *testing.T, connDB *sql.DB, teardownScript ...interface{}
 	assertNoErr(t, connDB.Close())
 }
 
+func TestCopyLocal(t *testing.T) {
+	//connDB := openConnection(t, "test_copy_local_pre")
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB, "test_copy_local_post")
+
+	_, err := connDB.ExecContext(
+		ctx,
+		"COPY csv_values FROM LOCAL './resources/csv/sample_data.csv'")
+
+	assertNoErr(t, err)
+}
+
 func TestBasicQuery(t *testing.T) {
 	connDB := openConnection(t)
 	defer closeConnection(t, connDB)
@@ -507,17 +519,6 @@ func TestStmtReuseBug(t *testing.T) {
 	assertNoErr(t, rows.Scan(&res))
 	assertEqual(t, res, true)
 	assertNoNext(t, rows)
-}
-
-func TestCopyLocal(t *testing.T) {
-	connDB := openConnection(t, "test_copy_local_pre")
-	defer closeConnection(t, connDB, "test_copy_local_post")
-
-	_, err := connDB.ExecContext(
-		ctx,
-		"COPY csv_values FROM LOCAL './resources/csv/sample_data.csv'")
-
-	assertNoErr(t, err)
 }
 
 func init() {

@@ -326,9 +326,9 @@ func (s *stmt) bindAndExecute(portalName string, args []driver.NamedValue) error
 		return err
 	}
 
-	if err := s.conn.sendMessage(&msgs.FEFlushMsg{}); err != nil {
-		return err
-	}
+	//if err := s.conn.sendMessage(&msgs.FEFlushMsg{}); err != nil {
+	//	return err
+	//}
 
 	return nil
 }
@@ -386,5 +386,62 @@ func (s *stmt) handleCopyLocal(fileList []string, rejectedPath string, exception
 		return emptyRowSet, err
 	}
 
+	bMsg, err := s.conn.recvMessage()
+
+	if err != nil {
+		return emptyRowSet, err
+	}
+
+	switch msg := bMsg.(type) {
+	case *msgs.BELoadNewFileMsg:
+		err = s.sendSingleFileContent(msg.FileName)
+	default:
+		_, _ = s.conn.defaultMessageHandler(msg)
+	}
+
 	return emptyRowSet, nil
+}
+
+func (s *stmt) sendSingleFileContent(fileName string) error {
+
+	file, err := os.Open(fileName)
+
+	if err != nil {
+		_ = s.conn.sendMessage(&msgs.FEErrorMsg{
+			FileName:   common.CurrentFile(),
+			LineNumber: common.CurrentLine(),
+			Method:     "sendSingleFileContent",
+			ErrorMsg:   err.Error(),
+		})
+
+		return err
+	}
+
+	defer file.Close()
+
+	copyBuffer := make([]byte, 65535)
+
+	for {
+		n, err := file.Read(copyBuffer)
+
+		if err != nil {
+
+			if err == io.EOF {
+				break
+			}
+
+			_ = s.conn.sendMessage(&msgs.FEErrorMsg{
+				FileName:   common.CurrentFile(),
+				LineNumber: common.CurrentLine(),
+				Method:     "sendSingleFileContent",
+				ErrorMsg:   err.Error(),
+			})
+
+			return err
+		}
+
+		s.conn.sendMessage(&msgs.FELoadDataMsg{Data: copyBuffer, UsedBytes: n})
+	}
+
+	return s.conn.sendMessage(&msgs.FELoadDoneMsg{})
 }
