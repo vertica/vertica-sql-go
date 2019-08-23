@@ -326,9 +326,9 @@ func (s *stmt) bindAndExecute(portalName string, args []driver.NamedValue) error
 		return err
 	}
 
-	//if err := s.conn.sendMessage(&msgs.FEFlushMsg{}); err != nil {
-	//	return err
-	//}
+	if err := s.conn.sendMessage(&msgs.FEFlushMsg{}); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -357,81 +357,10 @@ func (s *stmt) collectResults() (*rows, error) {
 			return emptyRowSet, nil
 		case *msgs.BEBindCompleteMsg:
 			break
-		case *msgs.BEVerifyLoadFilesMsg:
-			_, _ = s.handleCopyLocal(msg.FileList, msg.RejectedPath, msg.ExceptionsPath)
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg, *msgs.BECmdCompleteMsg:
 			return rows, nil
 		default:
 			_, _ = s.conn.defaultMessageHandler(msg)
 		}
 	}
-}
-
-func (s *stmt) handleCopyLocal(fileList []string, rejectedPath string, exceptionsPath string) (*rows, error) {
-
-	sizes, err := common.GetReadableFileSizes(fileList)
-
-	if err != nil {
-		_ = s.conn.sendMessage(&msgs.FEErrorMsg{
-			FileName:   common.CurrentFile(),
-			LineNumber: common.CurrentLine(),
-			Method:     "handleCopyLocal",
-			ErrorMsg:   err.Error(),
-		})
-
-		return emptyRowSet, err
-	}
-
-	if err = s.conn.sendMessage(&msgs.FEVerifyLoadFiles{FileNames: fileList, FileSizes: sizes}); err != nil {
-		return emptyRowSet, err
-	}
-
-	bMsg, err := s.conn.recvMessage()
-
-	if err != nil {
-		return emptyRowSet, err
-	}
-
-	switch msg := bMsg.(type) {
-	case *msgs.BELoadNewFileMsg:
-		err = s.sendSingleFileContent(msg.FileName)
-	default:
-		_, _ = s.conn.defaultMessageHandler(msg)
-	}
-
-	return emptyRowSet, nil
-}
-
-func (s *stmt) sendSingleFileContent(fileName string) error {
-
-	file, err := os.Open(fileName)
-
-	if err != nil {
-		_ = s.conn.sendMessage(&msgs.FELoadFailMsg{Message: err.Error()})
-		return err
-	}
-
-	defer file.Close()
-
-	copyBuffer := make([]byte, defaultBlockSize)
-
-	for {
-		n, err := file.Read(copyBuffer)
-
-		if err != nil {
-
-			if err == io.EOF {
-				break
-			}
-
-			_ = s.conn.sendMessage(&msgs.FELoadFailMsg{Message: err.Error()})
-			return err
-		}
-
-		s.conn.sendMessage(&msgs.FELoadDataMsg{Data: copyBuffer, UsedBytes: n})
-	}
-
-	s.conn.sendMessage(&msgs.FELoadDoneMsg{})
-
-	return s.conn.sendMessage(&msgs.FESyncMsg{})
 }
