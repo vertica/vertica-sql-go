@@ -207,6 +207,8 @@ func (v *connection) recvMessage() (msgs.BackEndMsg, error) {
 		// Print the message to stdout (for debugging purposes)
 		if _, drm := bem.(*msgs.BEDataRowMsg); !drm {
 			connectionLogger.Debug("<- " + bem.String())
+		} else {
+			connectionLogger.Trace("<- " + bem.String())
 		}
 
 		return bem, nil
