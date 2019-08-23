@@ -49,8 +49,8 @@ import (
 )
 
 var (
-	stmtLogger        = logger.New("stmt")
-	errNotImplemented = fmt.Errorf("function not implemented")
+	stmtLogger       = logger.New("stmt")
+	defaultBlockSize = 65535
 )
 
 type parseState int
@@ -407,19 +407,13 @@ func (s *stmt) sendSingleFileContent(fileName string) error {
 	file, err := os.Open(fileName)
 
 	if err != nil {
-		_ = s.conn.sendMessage(&msgs.FEErrorMsg{
-			FileName:   common.CurrentFile(),
-			LineNumber: common.CurrentLine(),
-			Method:     "sendSingleFileContent",
-			ErrorMsg:   err.Error(),
-		})
-
+		_ = s.conn.sendMessage(&msgs.FELoadFailMsg{Message: err.Error()})
 		return err
 	}
 
 	defer file.Close()
 
-	copyBuffer := make([]byte, 65535)
+	copyBuffer := make([]byte, defaultBlockSize)
 
 	for {
 		n, err := file.Read(copyBuffer)
@@ -430,18 +424,14 @@ func (s *stmt) sendSingleFileContent(fileName string) error {
 				break
 			}
 
-			_ = s.conn.sendMessage(&msgs.FEErrorMsg{
-				FileName:   common.CurrentFile(),
-				LineNumber: common.CurrentLine(),
-				Method:     "sendSingleFileContent",
-				ErrorMsg:   err.Error(),
-			})
-
+			_ = s.conn.sendMessage(&msgs.FELoadFailMsg{Message: err.Error()})
 			return err
 		}
 
 		s.conn.sendMessage(&msgs.FELoadDataMsg{Data: copyBuffer, UsedBytes: n})
 	}
 
-	return s.conn.sendMessage(&msgs.FELoadDoneMsg{})
+	s.conn.sendMessage(&msgs.FELoadDoneMsg{})
+
+	return s.conn.sendMessage(&msgs.FESyncMsg{})
 }

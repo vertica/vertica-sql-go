@@ -34,17 +34,20 @@ import "fmt"
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-// FELoadDataMsg docs
-type FELoadDataMsg struct {
-	Data      []byte
-	UsedBytes int
+// FELoadDoneMsg docs
+type FELoadFailMsg struct {
+	Message string
 }
 
 // Flatten docs
-func (m *FELoadDataMsg) Flatten() ([]byte, byte) {
-	return m.Data[0:m.UsedBytes], 'd'
+func (m *FELoadFailMsg) Flatten() ([]byte, byte) {
+	buf := newMsgBuffer()
+
+	buf.appendString(m.Message)
+
+	return []byte{}, 'f'
 }
 
-func (m *FELoadDataMsg) String() string {
-	return fmt.Sprintf("LoadData: %d byte(s)", m.UsedBytes)
+func (m *FELoadFailMsg) String() string {
+	return fmt.Sprintf("LoadFail: %s", m.Message)
 }
