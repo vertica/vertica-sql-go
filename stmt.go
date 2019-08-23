@@ -49,8 +49,8 @@ import (
 )
 
 var (
-	stmtLogger        = logger.New("stmt")
-	errNotImplemented = fmt.Errorf("function not implemented")
+	stmtLogger       = logger.New("stmt")
+	defaultBlockSize = 65535
 )
 
 type parseState int
@@ -359,6 +359,8 @@ func (s *stmt) collectResults() (*rows, error) {
 			break
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg, *msgs.BECmdCompleteMsg:
 			return rows, nil
+		default:
+			_, _ = s.conn.defaultMessageHandler(msg)
 		}
 	}
 }

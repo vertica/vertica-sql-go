@@ -74,6 +74,15 @@ func (b *msgBuffer) appendUint16(i uint16) *msgBuffer {
 	return b
 }
 
+func (b *msgBuffer) appendUint64(i uint64) *msgBuffer {
+	buf := make([]byte, 8)
+	binary.BigEndian.PutUint64(buf, i)
+
+	b.buf.Write(buf)
+
+	return b
+}
+
 func (b *msgBuffer) appendByte(v byte) *msgBuffer {
 	b.buf.WriteByte(v)
 
