@@ -50,7 +50,6 @@ import (
 
 var (
 	stmtLogger       = logger.New("stmt")
-	defaultBlockSize = 65535
 )
 
 type parseState int
