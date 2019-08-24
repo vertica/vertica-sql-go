@@ -49,7 +49,7 @@ import (
 )
 
 var (
-	stmtLogger       = logger.New("stmt")
+	stmtLogger = logger.New("stmt")
 )
 
 type parseState int
@@ -165,6 +165,9 @@ func (s *stmt) QueryContextRaw(ctx context.Context, args []driver.NamedValue) (*
 	var err error
 	var portalName string
 
+	s.conn.lockSession()
+	defer s.conn.unlockSession()
+
 	// If we have a prepared statement, go through bind/execute() phases instead.
 	if s.parseState == parseStateParsed {
 		if err = s.bindAndExecute(portalName, args); err != nil {
@@ -270,6 +273,9 @@ func (s *stmt) prepareAndDescribe() error {
 	}
 
 	s.parseState = parseStateParseError
+
+	s.conn.lockSession()
+	defer s.conn.unlockSession()
 
 	if err := s.conn.sendMessage(parseMsg); err != nil {
 		return err
