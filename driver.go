@@ -99,7 +99,7 @@ func init() {
 		if loggerBackend, err := logger.NewFileLogger(logFile); err == nil {
 			logger.SetLogger(loggerBackend)
 		} else {
-			driverLogger.Error("unable to create file logger (%s): %v", logFile, err)
+			driverLogger.Error("unable to create file logger: %v", err)
 		}
 	}
 
