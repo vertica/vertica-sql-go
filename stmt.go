@@ -85,6 +85,9 @@ func newStmt(connection *connection, command string) (*stmt, error) {
 
 // Close closes this statement.
 func (s *stmt) Close() error {
+	s.conn.lockSession()
+	defer s.conn.unlockSession()
+
 	if s.parseState == parseStateParsed {
 		closeMsg := &msgs.FECloseMsg{TargetType: msgs.CmdTargetTypeStatement, TargetName: s.preparedName}
 		if err := s.conn.sendMessage(closeMsg); err != nil {

@@ -1,4 +1,4 @@
-package vertigo
+package logger
 
 // Copyright (c) 2019 Micro Focus or one of its affiliates.
 //
@@ -32,76 +32,28 @@ package vertigo
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-import (
-	"database/sql"
-	"database/sql/driver"
-	"fmt"
-	"os"
-	"strconv"
+import "os"
 
-	"github.com/vertica/vertica-sql-go/logger"
-)
-
-// Driver as defined by the Go language Driver interface
-type Driver struct{}
-
-const (
-	driverName      string = "vertica-sql-go"
-	driverVersion   string = "0.1.3"
-	protocolVersion uint32 = 0x00030008
-)
-
-var driverLogger = logger.New("driver")
-
-// Open takes a connection string in this format:
-// user:pass@host:port/database
-func (d *Driver) Open(connString string) (driver.Conn, error) {
-	conn, err := newConnection(connString)
-	if err != nil {
-		driverLogger.Error(fmt.Sprint(err))
-	}
-	return conn, err
+type FileLogger struct {
+	fp *os.File
 }
 
-// Register ourselves with the sql package.
-func init() {
-	logger.SetLogLevel(logger.WARN)
+func NewFileLogger(filename string) (*FileLogger, error) {
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 
-	if logLevel := os.Getenv("VERTICA_SQL_GO_LOG_LEVEL"); logLevel != "" {
-		logVal, err := strconv.ParseUint(logLevel, 10, 32)
-		if err != nil {
-			driverLogger.Error(err.Error())
-		} else {
-			logFlag := logger.WARN
-			switch logVal {
-			case 0:
-				logFlag = logger.TRACE
-			case 1:
-				logFlag = logger.DEBUG
-			case 2:
-				logFlag = logger.INFO
-			case 3:
-				logFlag = logger.WARN
-			case 4:
-				logFlag = logger.ERROR
-			case 5:
-				logFlag = logger.FATAL
-			case 6:
-				logFlag = logger.NONE
-			default:
-				driverLogger.Error("invalid VERTICA_SQL_GO_LOG_LEVEL value; should be 0-6")
-			}
-			logger.SetLogLevel(logFlag)
-		}
+	if err != nil {
+		return nil, err
 	}
 
-	if logFile := os.Getenv("VERTICA_SQL_GO_LOG_FILE"); logFile != "" {
-		if loggerBackend, err := logger.NewFileLogger(logFile); err == nil {
-			logger.SetLogger(loggerBackend)
-		} else {
-			driverLogger.Error("unable to create file logger (%s): %v", logFile, err)
-		}
-	}
+	return &FileLogger{fp: file}, nil
+}
 
-	sql.Register("vertica", &Driver{})
+func (l *FileLogger) write(logStr string) {
+	l.fp.Write([]byte(logStr))
+}
+
+func (l *FileLogger) close() {
+	if l.fp != nil {
+		l.fp.Close()
+	}
 }

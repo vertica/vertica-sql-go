@@ -34,9 +34,12 @@ package logger
 
 import "os"
 
-type IOLogger struct {
+type STDIOLogger struct {
 }
 
-func (l *IOLogger) write(logStr string) {
+func (l *STDIOLogger) write(logStr string) {
 	os.Stdout.Write([]byte(logStr))
+}
+
+func (l *STDIOLogger) close() {
 }

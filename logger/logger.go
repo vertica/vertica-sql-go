@@ -55,12 +55,13 @@ const (
 // Backend defines the public interface that must be implemented by all logger backends
 type Backend interface {
 	write(logStr string)
+	close()
 }
 
 var (
 	prefixes         = []string{"TRACE", "DEBUG", "INFO ", "WARN ", "ERROR", "FATAL"}
 	level            = WARN
-	logger   Backend = &IOLogger{}
+	logger   Backend = &STDIOLogger{}
 )
 
 type Logger struct {
@@ -131,5 +132,8 @@ func SetLogLevel(newLevel LogLevel) {
 }
 
 func SetLogger(newLogger Backend) {
-	logger = newLogger
+	if logger != newLogger {
+		logger.close()
+		logger = newLogger
+	}
 }

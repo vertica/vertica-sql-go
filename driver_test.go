@@ -527,8 +527,6 @@ func TestColumnsWithNoRows(t *testing.T) {
 }
 
 func init() {
-	logger.SetLogLevel(logger.DEBUG)
-
 	userObj, _ := user.Current()
 
 	testLogger.Info("default user name: %s", userObj.Username)
