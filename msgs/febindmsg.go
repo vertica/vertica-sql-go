@@ -96,7 +96,7 @@ func (m *FEBindMsg) Flatten() ([]byte, byte) {
 
 func (m *FEBindMsg) String() string {
 	return fmt.Sprintf(
-		"Bind: Portal=%s, Statement='%s', ArgCount=%d",
+		"Bind: Portal='%s', Statement='%s', ArgC=%d",
 		m.Portal,
 		m.Statement,
 		len(m.OIDTypes))

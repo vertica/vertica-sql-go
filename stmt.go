@@ -306,9 +306,11 @@ func (s *stmt) prepareAndDescribe() error {
 			return msg.ToErrorType()
 		case *msgs.BEParseCompleteMsg:
 			s.parseState = parseStateParsed
+		case *msgs.BERowDescMsg:
+			s.lastRowDesc = msg
+			return nil
 		case *msgs.BEParameterDescMsg:
 			s.paramTypes = msg.ParameterTypes
-			return nil
 		default:
 			s.conn.defaultMessageHandler(msg)
 		}
@@ -362,8 +364,8 @@ func (s *stmt) collectResults() (*rows, error) {
 			return emptyRowSet, msg.ToErrorType()
 		case *msgs.BEEmptyQueryResponseMsg:
 			return emptyRowSet, nil
-		case *msgs.BEBindCompleteMsg:
-			break
+		//case *msgs.BEBindCompleteMsg:
+		//	break
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg, *msgs.BECmdCompleteMsg:
 			return rows, nil
 		default:
