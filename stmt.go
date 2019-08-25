@@ -309,6 +309,9 @@ func (s *stmt) prepareAndDescribe() error {
 		case *msgs.BERowDescMsg:
 			s.lastRowDesc = msg
 			return nil
+		case *msgs.BENoDataMsg:
+			s.lastRowDesc = nil
+			return nil
 		case *msgs.BEParameterDescMsg:
 			s.paramTypes = msg.ParameterTypes
 		default:
