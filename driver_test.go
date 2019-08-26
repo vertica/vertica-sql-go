@@ -41,6 +41,7 @@ import (
 	"os"
 	"os/user"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -509,21 +510,71 @@ func TestStmtReuseBug(t *testing.T) {
 	assertNoNext(t, rows)
 }
 
-// Issue #20 - test by @grzm
 func TestColumnsWithNoRows(t *testing.T) {
 	connDB := openConnection(t)
 	defer closeConnection(t, connDB)
 
 	stmt, err := connDB.PrepareContext(ctx, "SELECT true AS res WHERE false")
 	assertNoErr(t, err)
+
+	defer stmt.Close()
+
 	rows, err := stmt.QueryContext(ctx)
 	assertNoErr(t, err)
 
 	columns, err := rows.Columns()
 	assertNoErr(t, err)
-	assertEqual(t, len(columns), 1) // this fails
+
+	defer rows.Close()
+
+	assertEqual(t, len(columns), 1)
 
 	assertNoNext(t, rows)
+}
+
+type threadedQuery struct {
+	query         string
+	resultColumns []string
+}
+
+func TestStmtOrderingInThreads(t *testing.T) {
+	connDB := openConnection(t, "test_stmt_ordering_threads_pre")
+	connDB.SetMaxOpenConns(1)
+	defer connDB.SetMaxOpenConns(0)
+	defer closeConnection(t, connDB, "test_stmt_ordering_threads_post")
+
+	connDB.SetMaxOpenConns(1)
+
+	queries := []threadedQuery{
+		{query: "SELECT a FROM stmt_thread_test", resultColumns: []string{"a"}},
+		{query: "SELECT a, b FROM stmt_thread_test", resultColumns: []string{"a", "b"}},
+		{query: "SELECT a, b, c FROM stmt_thread_test", resultColumns: []string{"a", "b", "c"}},
+		{query: "SELECT a, b, c, d FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d"}},
+		{query: "SELECT a, b, c, d, e FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d", "e"}},
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(len(queries))
+
+	for ct, query := range queries {
+		go func(idx int, q threadedQuery) {
+			stmt, err := connDB.PrepareContext(ctx, q.query)
+			assertNoErr(t, err)
+			defer stmt.Close()
+			rows, err := stmt.QueryContext(ctx)
+			assertNoErr(t, err)
+			defer rows.Close()
+
+			columns, err := rows.Columns()
+			assertNoErr(t, err)
+			assertEqual(t, len(columns), len(q.resultColumns))
+
+			wg.Done()
+		}(ct, query)
+	}
+
+	wg.Wait()
+
 }
 
 func init() {

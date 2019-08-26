@@ -164,6 +164,9 @@ func (s *stmt) QueryContextRaw(ctx context.Context, args []driver.NamedValue) (*
 	var err error
 	var portalName string
 
+	s.conn.lockSessionMutex()
+	defer s.conn.unlockSessionMutex()
+
 	// If we have a prepared statement, go through bind/execute() phases instead.
 	if s.parseState == parseStateParsed {
 		if err = s.bindAndExecute(portalName, args); err != nil {
@@ -269,6 +272,9 @@ func (s *stmt) prepareAndDescribe() error {
 	}
 
 	s.parseState = parseStateParseError
+
+	s.conn.lockSessionMutex()
+	defer s.conn.unlockSessionMutex()
 
 	if err := s.conn.sendMessage(parseMsg); err != nil {
 		return err

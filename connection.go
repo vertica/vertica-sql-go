@@ -69,7 +69,7 @@ type connection struct {
 	usePreparedStmts bool
 	sessionID        string
 	serverTZOffset   string
-	sessionMutex     sync.Mutex
+	sessMutex        sync.Mutex
 }
 
 // Begin - Begin starts and returns a new transaction. (DEPRECATED)
@@ -463,4 +463,12 @@ func (v *connection) authSendSHA512Password(extraAuthData []byte) error {
 	msg := &msgs.FEPasswordMsg{PasswordData: hash2}
 
 	return v.sendMessage(msg)
+}
+
+func (v *connection) lockSessionMutex() {
+	v.sessMutex.Lock()
+}
+
+func (v *connection) unlockSessionMutex() {
+	v.sessMutex.Unlock()
 }
