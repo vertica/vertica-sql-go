@@ -464,15 +464,3 @@ func (v *connection) authSendSHA512Password(extraAuthData []byte) error {
 
 	return v.sendMessage(msg)
 }
-
-func (v *connection) lockSession() {
-	connectionLogger.Trace("thread awaiting session lock")
-	v.sessionMutex.Lock()
-	connectionLogger.Trace("thread acquired session lock")
-}
-
-func (v *connection) unlockSession() {
-	connectionLogger.Trace("thread releasing session lock")
-	v.sessionMutex.Unlock()
-	connectionLogger.Trace("thread released session lock")
-}

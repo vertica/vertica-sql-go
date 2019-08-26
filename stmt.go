@@ -85,15 +85,11 @@ func newStmt(connection *connection, command string) (*stmt, error) {
 
 // Close closes this statement.
 func (s *stmt) Close() error {
-	s.conn.lockSession()
-	defer s.conn.unlockSession()
-
 	if s.parseState == parseStateParsed {
 		closeMsg := &msgs.FECloseMsg{TargetType: msgs.CmdTargetTypeStatement, TargetName: s.preparedName}
 		if err := s.conn.sendMessage(closeMsg); err != nil {
 			return err
 		}
-
 		s.parseState = parseStateUnparsed
 	}
 
@@ -167,9 +163,6 @@ func (s *stmt) QueryContextRaw(ctx context.Context, args []driver.NamedValue) (*
 	var cmd string
 	var err error
 	var portalName string
-
-	s.conn.lockSession()
-	defer s.conn.unlockSession()
 
 	// If we have a prepared statement, go through bind/execute() phases instead.
 	if s.parseState == parseStateParsed {
@@ -277,9 +270,6 @@ func (s *stmt) prepareAndDescribe() error {
 
 	s.parseState = parseStateParseError
 
-	s.conn.lockSession()
-	defer s.conn.unlockSession()
-
 	if err := s.conn.sendMessage(parseMsg); err != nil {
 		return err
 	}
@@ -367,8 +357,8 @@ func (s *stmt) collectResults() (*rows, error) {
 			return emptyRowSet, msg.ToErrorType()
 		case *msgs.BEEmptyQueryResponseMsg:
 			return emptyRowSet, nil
-		//case *msgs.BEBindCompleteMsg:
-		//	break
+		case *msgs.BEBindCompleteMsg, *msgs.BECmdDescriptionMsg:
+			continue
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg, *msgs.BECmdCompleteMsg:
 			return rows, nil
 		default:
