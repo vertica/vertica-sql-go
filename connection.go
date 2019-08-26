@@ -360,7 +360,7 @@ func (v *connection) defaultMessageHandler(bMsg msgs.BackEndMsg) (bool, error) {
 	default:
 		handled = false
 		err = fmt.Errorf("unhandled message: %v", msg)
-		connectionLogger.Warn("%v", err)
+		//connectionLogger.Warn("%v", err)
 	}
 
 	return handled, err
