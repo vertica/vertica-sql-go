@@ -87,10 +87,35 @@ func newStmt(connection *connection, command string) (*stmt, error) {
 func (s *stmt) Close() error {
 	if s.parseState == parseStateParsed {
 		closeMsg := &msgs.FECloseMsg{TargetType: msgs.CmdTargetTypeStatement, TargetName: s.preparedName}
+
+		s.conn.lockSessionMutex()
+		defer s.conn.unlockSessionMutex()
+
 		if err := s.conn.sendMessage(closeMsg); err != nil {
 			return err
 		}
-		s.parseState = parseStateUnparsed
+
+		if err := s.conn.sendMessage(&msgs.FEFlushMsg{}); err != nil {
+			return err
+		}
+
+		for {
+			bMsg, err := s.conn.recvMessage()
+
+			if err != nil {
+				return err
+			}
+
+			switch bMsg.(type) {
+			case *msgs.BECloseCompleteMsg:
+				s.parseState = parseStateUnparsed
+				return nil
+			case *msgs.BECmdDescriptionMsg:
+				continue
+			default:
+				s.conn.defaultMessageHandler(bMsg)
+			}
+		}
 	}
 
 	return nil
@@ -310,6 +335,8 @@ func (s *stmt) prepareAndDescribe() error {
 			return nil
 		case *msgs.BEParameterDescMsg:
 			s.paramTypes = msg.ParameterTypes
+		case *msgs.BECmdDescriptionMsg:
+			continue
 		default:
 			s.conn.defaultMessageHandler(msg)
 		}
