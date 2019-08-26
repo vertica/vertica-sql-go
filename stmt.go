@@ -49,7 +49,7 @@ import (
 )
 
 var (
-	stmtLogger       = logger.New("stmt")
+	stmtLogger = logger.New("stmt")
 )
 
 type parseState int
@@ -87,11 +87,35 @@ func newStmt(connection *connection, command string) (*stmt, error) {
 func (s *stmt) Close() error {
 	if s.parseState == parseStateParsed {
 		closeMsg := &msgs.FECloseMsg{TargetType: msgs.CmdTargetTypeStatement, TargetName: s.preparedName}
+
+		s.conn.lockSessionMutex()
+		defer s.conn.unlockSessionMutex()
+
 		if err := s.conn.sendMessage(closeMsg); err != nil {
 			return err
 		}
 
-		s.parseState = parseStateUnparsed
+		if err := s.conn.sendMessage(&msgs.FEFlushMsg{}); err != nil {
+			return err
+		}
+
+		for {
+			bMsg, err := s.conn.recvMessage()
+
+			if err != nil {
+				return err
+			}
+
+			switch bMsg.(type) {
+			case *msgs.BECloseCompleteMsg:
+				s.parseState = parseStateUnparsed
+				return nil
+			case *msgs.BECmdDescriptionMsg:
+				continue
+			default:
+				s.conn.defaultMessageHandler(bMsg)
+			}
+		}
 	}
 
 	return nil
@@ -164,6 +188,9 @@ func (s *stmt) QueryContextRaw(ctx context.Context, args []driver.NamedValue) (*
 	var cmd string
 	var err error
 	var portalName string
+
+	s.conn.lockSessionMutex()
+	defer s.conn.unlockSessionMutex()
 
 	// If we have a prepared statement, go through bind/execute() phases instead.
 	if s.parseState == parseStateParsed {
@@ -271,6 +298,9 @@ func (s *stmt) prepareAndDescribe() error {
 
 	s.parseState = parseStateParseError
 
+	s.conn.lockSessionMutex()
+	defer s.conn.unlockSessionMutex()
+
 	if err := s.conn.sendMessage(parseMsg); err != nil {
 		return err
 	}
@@ -297,9 +327,16 @@ func (s *stmt) prepareAndDescribe() error {
 			return msg.ToErrorType()
 		case *msgs.BEParseCompleteMsg:
 			s.parseState = parseStateParsed
+		case *msgs.BERowDescMsg:
+			s.lastRowDesc = msg
+			return nil
+		case *msgs.BENoDataMsg:
+			s.lastRowDesc = nil
+			return nil
 		case *msgs.BEParameterDescMsg:
 			s.paramTypes = msg.ParameterTypes
-			return nil
+		case *msgs.BECmdDescriptionMsg:
+			continue
 		default:
 			s.conn.defaultMessageHandler(msg)
 		}
@@ -353,8 +390,8 @@ func (s *stmt) collectResults() (*rows, error) {
 			return emptyRowSet, msg.ToErrorType()
 		case *msgs.BEEmptyQueryResponseMsg:
 			return emptyRowSet, nil
-		case *msgs.BEBindCompleteMsg:
-			break
+		case *msgs.BEBindCompleteMsg, *msgs.BECmdDescriptionMsg:
+			continue
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg, *msgs.BECmdCompleteMsg:
 			return rows, nil
 		default:

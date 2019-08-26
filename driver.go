@@ -70,7 +70,7 @@ func init() {
 	if logLevel := os.Getenv("VERTICA_SQL_GO_LOG_LEVEL"); logLevel != "" {
 		logVal, err := strconv.ParseUint(logLevel, 10, 32)
 		if err != nil {
-			driverLogger.Trace(err.Error())
+			driverLogger.Error(err.Error())
 		} else {
 			logFlag := logger.WARN
 			switch logVal {
@@ -89,9 +89,17 @@ func init() {
 			case 6:
 				logFlag = logger.NONE
 			default:
-				driverLogger.Warn("invalid log level specified in environment variable VERTICA_SQL_GO_LOG_LEVEL; should be 0-6")
+				driverLogger.Error("invalid VERTICA_SQL_GO_LOG_LEVEL value; should be 0-6")
 			}
 			logger.SetLogLevel(logFlag)
+		}
+	}
+
+	if logFile := os.Getenv("VERTICA_SQL_GO_LOG_FILE"); logFile != "" {
+		if loggerBackend, err := logger.NewFileLogger(logFile); err == nil {
+			logger.SetLogger(loggerBackend)
+		} else {
+			driverLogger.Error("unable to create file logger: %v", err)
 		}
 	}
 

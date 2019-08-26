@@ -44,18 +44,12 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/vertica/vertica-sql-go/common"
 	"github.com/vertica/vertica-sql-go/logger"
 	"github.com/vertica/vertica-sql-go/msgs"
-)
-
-const (
-	authStateWaiting     int32 = 0
-	authStateNegotiating int32 = 1
-	authStateFailed      int32 = 2
-	authStateOK          int32 = 4
 )
 
 var (
@@ -75,6 +69,7 @@ type connection struct {
 	usePreparedStmts bool
 	sessionID        string
 	serverTZOffset   string
+	sessMutex        sync.Mutex
 }
 
 // Begin - Begin starts and returns a new transaction. (DEPRECATED)
@@ -365,6 +360,7 @@ func (v *connection) defaultMessageHandler(bMsg msgs.BackEndMsg) (bool, error) {
 	default:
 		handled = false
 		err = fmt.Errorf("unhandled message: %v", msg)
+		//connectionLogger.Warn("%v", err)
 	}
 
 	return handled, err
@@ -467,4 +463,12 @@ func (v *connection) authSendSHA512Password(extraAuthData []byte) error {
 	msg := &msgs.FEPasswordMsg{PasswordData: hash2}
 
 	return v.sendMessage(msg)
+}
+
+func (v *connection) lockSessionMutex() {
+	v.sessMutex.Lock()
+}
+
+func (v *connection) unlockSessionMutex() {
+	v.sessMutex.Unlock()
 }

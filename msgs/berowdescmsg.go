@@ -120,7 +120,7 @@ func (m *BERowDescMsg) CreateFromMsgBody(buf *msgBuffer) (BackEndMsg, error) {
 }
 
 func (m *BERowDescMsg) String() string {
-	return fmt.Sprintf("RowDesc: %d", len(m.Columns))
+	return fmt.Sprintf("RowDesc: %d column(s)", len(m.Columns))
 }
 
 func init() {

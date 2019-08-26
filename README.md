@@ -60,12 +60,25 @@ The vertica-sql-go driver supports multiple log levels, as defined in the follow
 | 5               | FATAL          | Show process-breaking errors |
 | 6               | NONE           | Disable all log messages |
 
-and they can be set programatically by calling the logger global level itself
+and they can be set programmatically by calling the logger global level itself
 ```Go
 logger.SetLogLevel(logger.DEBUG)
 ```
 or by setting the environment variable VERTICA_SQL_GO_LOG_LEVEL to one of the integer values in the table above. This must be done before the process using the driver has started as the global log level will be read from here on start-up.
 
+Example:
+```bash
+export VERTICA_SQL_GO_LOG_LEVEL=3
+```
+### Setting the Log File
+
+By default, log messages are sent to stdout, but the vertica-sql-go driver can also output to a file in cases where stdout is not available.
+Simply set the environment variable VERTICA_SQL_GO_LOG_FILE to your desired output location.
+
+Example:
+```bash
+export VERTICA_SQL_GO_LOG_FILE=/var/log/vertica-sql-go.log
+``` 
 
 ### Creating a connection
 
