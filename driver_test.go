@@ -558,6 +558,7 @@ func TestStmtOrderingInThreads(t *testing.T) {
 
 	for ct, query := range queries {
 		go func(idx int, q threadedQuery) {
+			defer wg.Done()
 			stmt, err := connDB.PrepareContext(ctx, q.query)
 			assertNoErr(t, err)
 			defer stmt.Close()
@@ -568,8 +569,6 @@ func TestStmtOrderingInThreads(t *testing.T) {
 			columns, err := rows.Columns()
 			assertNoErr(t, err)
 			assertEqual(t, len(columns), len(q.resultColumns))
-
-			wg.Done()
 		}(ct, query)
 	}
 
