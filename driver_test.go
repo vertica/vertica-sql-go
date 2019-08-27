@@ -580,8 +580,40 @@ func TestSTDINCopy(t *testing.T) {
 	connDB := openConnection(t, "test_stdin_copy_pre")
 	defer closeConnection(t, connDB, "test_stdin_copy_post")
 
-	_, err := connDB.ExecContext(ctx, "COPY stdin_data FROM STDIN DELIMITER ','")
+	// Do some trickery with os.Stdin, but make sure to put it back when we're done.
+	oldStdIn := os.Stdin
+
+	fp, err := os.OpenFile("./resources/csv/sample_data.csv", os.O_RDONLY, 0600)
 	assertNoErr(t, err)
+
+	os.Stdin = fp
+	defer func() { os.Stdin.Close(); os.Stdin = oldStdIn }()
+
+	_, err = connDB.ExecContext(ctx, "COPY stdin_data FROM STDIN DELIMITER ','")
+	assertNoErr(t, err)
+
+	rows, err := connDB.QueryContext(ctx, "SELECT * FROM stdin_data")
+	assertNoErr(t, err)
+
+	defer rows.Close()
+
+	columns, _ := rows.Columns()
+	assertEqual(t, len(columns), 2)
+
+	names := []string{"roger", "siting", "tom", "yang", "john"}
+	ids := []int{123, 456, 789, 333, 555}
+	matched := 0
+	var name string
+	var id int
+
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&name, &id))
+		assertEqual(t, name, names[matched])
+		assertEqual(t, id, ids[matched])
+		matched++
+	}
+
+	assertEqual(t, matched, 5)
 }
 
 func init() {
