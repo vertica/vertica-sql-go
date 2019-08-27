@@ -580,7 +580,7 @@ func TestSTDINCopy(t *testing.T) {
 	connDB := openConnection(t, "test_stdin_copy_pre")
 	defer closeConnection(t, connDB, "test_stdin_copy_post")
 
-	_, err := connDB.Exec("COPY stdin_data FROM STDIN DELIMITER ','")
+	_, err := connDB.ExecContext(ctx, "COPY stdin_data FROM STDIN DELIMITER ','")
 	assertNoErr(t, err)
 }
 

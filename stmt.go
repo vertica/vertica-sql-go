@@ -60,6 +60,10 @@ const (
 	parseStateParsed
 )
 
+const (
+	stdInDefaultCopyBlockSize = 65535
+)
+
 type stmt struct {
 	conn         *connection
 	command      string
@@ -234,10 +238,29 @@ func (s *stmt) QueryContextRaw(ctx context.Context, args []driver.NamedValue) (*
 			return emptyRowSet, nil
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg:
 			return rows, nil
+		case *msgs.BEInitSTDINLoadMsg:
+			s.transferSTDIN()
 		default:
 			s.conn.defaultMessageHandler(bMsg)
 		}
 	}
+}
+
+func (s *stmt) transferSTDIN() {
+	block := make([]byte, stdInDefaultCopyBlockSize)
+	for {
+		bytesRead, err := os.Stdin.Read(block)
+		if err == io.EOF {
+			s.conn.sendMessage(&msgs.FELoadDoneMsg{})
+			break
+		}
+		if err != nil {
+			s.conn.sendMessage(&msgs.FELoadFailMsg{err.Error()})
+			break
+		}
+		s.conn.sendMessage(&msgs.FELoadDataMsg{Data: block, UsedBytes: bytesRead})
+	}
+	s.conn.sendMessage(&msgs.FEFlushMsg{})
 }
 
 func (s *stmt) interpolate(args []driver.NamedValue) (string, error) {
@@ -394,6 +417,8 @@ func (s *stmt) collectResults() (*rows, error) {
 			continue
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg, *msgs.BECmdCompleteMsg:
 			return rows, nil
+		case *msgs.BEInitSTDINLoadMsg:
+			s.transferSTDIN()
 		default:
 			_, _ = s.conn.defaultMessageHandler(msg)
 		}
