@@ -551,6 +551,26 @@ func TestStmtOrderingInThreads(t *testing.T) {
 		{query: "SELECT a, b, c FROM stmt_thread_test", resultColumns: []string{"a", "b", "c"}},
 		{query: "SELECT a, b, c, d FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d"}},
 		{query: "SELECT a, b, c, d, e FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d", "e"}},
+		{query: "SELECT a FROM stmt_thread_test", resultColumns: []string{"a"}},
+		{query: "SELECT a, b FROM stmt_thread_test", resultColumns: []string{"a", "b"}},
+		{query: "SELECT a, b, c FROM stmt_thread_test", resultColumns: []string{"a", "b", "c"}},
+		{query: "SELECT a, b, c, d FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d"}},
+		{query: "SELECT a, b, c, d, e FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d", "e"}},
+		{query: "SELECT a FROM stmt_thread_test", resultColumns: []string{"a"}},
+		{query: "SELECT a, b FROM stmt_thread_test", resultColumns: []string{"a", "b"}},
+		{query: "SELECT a, b, c FROM stmt_thread_test", resultColumns: []string{"a", "b", "c"}},
+		{query: "SELECT a, b, c, d FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d"}},
+		{query: "SELECT a, b, c, d, e FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d", "e"}},
+		{query: "SELECT a FROM stmt_thread_test", resultColumns: []string{"a"}},
+		{query: "SELECT a, b FROM stmt_thread_test", resultColumns: []string{"a", "b"}},
+		{query: "SELECT a, b, c FROM stmt_thread_test", resultColumns: []string{"a", "b", "c"}},
+		{query: "SELECT a, b, c, d FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d"}},
+		{query: "SELECT a, b, c, d, e FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d", "e"}},
+		{query: "SELECT a FROM stmt_thread_test", resultColumns: []string{"a"}},
+		{query: "SELECT a, b FROM stmt_thread_test", resultColumns: []string{"a", "b"}},
+		{query: "SELECT a, b, c FROM stmt_thread_test", resultColumns: []string{"a", "b", "c"}},
+		{query: "SELECT a, b, c, d FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d"}},
+		{query: "SELECT a, b, c, d, e FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d", "e"}},
 	}
 
 	var wg sync.WaitGroup
@@ -565,6 +585,7 @@ func TestStmtOrderingInThreads(t *testing.T) {
 			rows, err := stmt.QueryContext(ctx)
 			assertNoErr(t, err)
 			defer rows.Close()
+			assertNext(t, rows)
 
 			columns, err := rows.Columns()
 			assertNoErr(t, err)
