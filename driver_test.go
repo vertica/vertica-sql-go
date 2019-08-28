@@ -635,6 +635,7 @@ func TestSTDINCopy(t *testing.T) {
 	}
 
 	assertEqual(t, matched, 5)
+	assertNoNext(t, rows)
 }
 
 func init() {
