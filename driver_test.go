@@ -638,6 +638,43 @@ func TestSTDINCopy(t *testing.T) {
 	assertNoNext(t, rows)
 }
 
+func TestSTDINCopyWithStream(t *testing.T) {
+	connDB := openConnection(t, "test_stdin_copy_pre")
+	defer closeConnection(t, connDB, "test_stdin_copy_post")
+
+	fp, err := os.OpenFile("./resources/csv/sample_data.csv", os.O_RDONLY, 0600)
+	assertNoErr(t, err)
+
+	defer fp.Close()
+
+	_, err = connDB.ExecContext(context.WithValue(ctx, "stdin.stream", fp), "COPY stdin_data FROM STDIN DELIMITER ','")
+	assertNoErr(t, err)
+
+	rows, err := connDB.QueryContext(ctx, "SELECT * FROM stdin_data")
+	assertNoErr(t, err)
+
+	defer rows.Close()
+
+	columns, _ := rows.Columns()
+	assertEqual(t, len(columns), 2)
+
+	names := []string{"roger", "siting", "tom", "yang", "john"}
+	ids := []int{123, 456, 789, 333, 555}
+	matched := 0
+	var name string
+	var id int
+
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&name, &id))
+		assertEqual(t, name, names[matched])
+		assertEqual(t, id, ids[matched])
+		matched++
+	}
+
+	assertEqual(t, matched, 5)
+	assertNoNext(t, rows)
+}
+
 func init() {
 	userObj, _ := user.Current()
 

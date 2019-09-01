@@ -202,7 +202,7 @@ func (s *stmt) QueryContextRaw(ctx context.Context, args []driver.NamedValue) (*
 			return emptyRowSet, err
 		}
 
-		return s.collectResults()
+		return s.collectResults(ctx)
 	}
 
 	rows := emptyRowSet
@@ -239,17 +239,29 @@ func (s *stmt) QueryContextRaw(ctx context.Context, args []driver.NamedValue) (*
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg:
 			return rows, nil
 		case *msgs.BEInitSTDINLoadMsg:
-			s.transferSTDIN()
+			s.transferSTDIN(ctx)
 		default:
 			s.conn.defaultMessageHandler(bMsg)
 		}
 	}
 }
 
-func (s *stmt) transferSTDIN() {
+func (s *stmt) transferSTDIN(ctx context.Context) {
+
+	var streamToUse io.Reader
+	streamToUse = os.Stdin
+
+	if newStreamIntr := ctx.Value("stdin.stream"); newStreamIntr != nil {
+		if streamVal, ok := newStreamIntr.(io.Reader); ok {
+			streamToUse = streamVal
+		} else {
+			s.conn.sendMessage(&msgs.FELoadFailMsg{"stdin.stream value is not an io.Reader"})
+		}
+	}
+
 	block := make([]byte, stdInDefaultCopyBlockSize)
 	for {
-		bytesRead, err := os.Stdin.Read(block)
+		bytesRead, err := streamToUse.Read(block)
 		if err == io.EOF {
 			s.conn.sendMessage(&msgs.FELoadDoneMsg{})
 			break
@@ -389,7 +401,7 @@ func (s *stmt) bindAndExecute(portalName string, args []driver.NamedValue) error
 	return nil
 }
 
-func (s *stmt) collectResults() (*rows, error) {
+func (s *stmt) collectResults(ctx context.Context) (*rows, error) {
 	rows := emptyRowSet
 
 	if s.lastRowDesc != nil {
@@ -418,7 +430,7 @@ func (s *stmt) collectResults() (*rows, error) {
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg, *msgs.BECmdCompleteMsg:
 			return rows, nil
 		case *msgs.BEInitSTDINLoadMsg:
-			s.transferSTDIN()
+			s.transferSTDIN(ctx)
 		default:
 			_, _ = s.conn.defaultMessageHandler(msg)
 		}
