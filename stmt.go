@@ -239,24 +239,20 @@ func (s *stmt) QueryContextRaw(ctx context.Context, args []driver.NamedValue) (*
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg:
 			return rows, nil
 		case *msgs.BEInitSTDINLoadMsg:
-			s.transferSTDIN(ctx)
+			s.copySTDIN(ctx)
 		default:
 			s.conn.defaultMessageHandler(bMsg)
 		}
 	}
 }
 
-func (s *stmt) transferSTDIN(ctx context.Context) {
+func (s *stmt) copySTDIN(ctx context.Context) {
 
 	var streamToUse io.Reader
 	streamToUse = os.Stdin
 
-	if newStreamIntr := ctx.Value("stdin.stream"); newStreamIntr != nil {
-		if streamVal, ok := newStreamIntr.(io.Reader); ok {
-			streamToUse = streamVal
-		} else {
-			s.conn.sendMessage(&msgs.FELoadFailMsg{"stdin.stream value is not an io.Reader"})
-		}
+	if vCtx, ok := ctx.(VerticaContext); ok {
+		streamToUse = vCtx.GetInputStream()
 	}
 
 	block := make([]byte, stdInDefaultCopyBlockSize)
@@ -430,7 +426,7 @@ func (s *stmt) collectResults(ctx context.Context) (*rows, error) {
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg, *msgs.BECmdCompleteMsg:
 			return rows, nil
 		case *msgs.BEInitSTDINLoadMsg:
-			s.transferSTDIN(ctx)
+			s.copySTDIN(ctx)
 		default:
 			_, _ = s.conn.defaultMessageHandler(msg)
 		}

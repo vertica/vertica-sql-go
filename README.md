@@ -255,9 +255,10 @@ Simply create a new context that contains that stream as the 'stdio.stream' valu
 ```go
 fp, err := os.OpenFile("./resources/csv/sample_data.csv", os.O_RDONLY, 0600)
 ...
-_, err = connDB.ExecContext(
-    context.WithValue(ctx, "stdin.stream", fp),
-    "COPY stdin_data FROM STDIN DELIMITER ','")
+vCtx := NewVerticaContext(ctx)
+vCtx.SetInputStream(fp)
+
+_, err = connDB.ExecContext(vCtx, "COPY stdin_data FROM STDIN DELIMITER ','")
 ```
 
 If this value is not found, the stream will fall back to os.stdin. If you supply an incompatible object type,

@@ -647,7 +647,10 @@ func TestSTDINCopyWithStream(t *testing.T) {
 
 	defer fp.Close()
 
-	_, err = connDB.ExecContext(context.WithValue(ctx, "stdin.stream", fp), "COPY stdin_data FROM STDIN DELIMITER ','")
+	vCtx := NewVerticaContext(ctx)
+	vCtx.SetInputStream(fp)
+
+	_, err = connDB.ExecContext(vCtx, "COPY stdin_data FROM STDIN DELIMITER ','")
 	assertNoErr(t, err)
 
 	rows, err := connDB.QueryContext(ctx, "SELECT * FROM stdin_data")
