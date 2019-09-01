@@ -39,23 +39,33 @@ import (
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+const (
+	minCopyBlockSize          = 16384
+	stdInDefaultCopyBlockSize = 65535
+)
+
 type VerticaContext interface {
 	context.Context
 
 	SetInputStream(inputStream io.Reader) error
 	GetInputStream() io.Reader
+
+	SetCopyBlockSizeBytes(blockSize int) error
+	GetCopyBlockSizeBytes() int
 }
 
 type verticaContext struct {
 	context.Context
 
 	inputStream io.Reader
+	blockSize   int
 }
 
 func NewVerticaContext(parentCtx context.Context) VerticaContext {
 	return &verticaContext{
 		Context:     parentCtx,
 		inputStream: os.Stdin,
+		blockSize:   stdInDefaultCopyBlockSize,
 	}
 }
 
@@ -70,4 +80,18 @@ func (c *verticaContext) SetInputStream(inputStream io.Reader) error {
 
 func (c *verticaContext) GetInputStream() io.Reader {
 	return c.inputStream
+}
+
+func (c *verticaContext) SetCopyBlockSizeBytes(blockSize int) error {
+	if blockSize < minCopyBlockSize {
+		return fmt.Errorf("cannot set copy block size to less than %d", minCopyBlockSize)
+	}
+
+	c.blockSize = blockSize
+
+	return nil
+}
+
+func (c *verticaContext) GetCopyBlockSizeBytes() int {
+	return c.blockSize
 }

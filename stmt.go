@@ -60,10 +60,6 @@ const (
 	parseStateParsed
 )
 
-const (
-	stdInDefaultCopyBlockSize = 65535
-)
-
 type stmt struct {
 	conn         *connection
 	command      string
@@ -251,11 +247,14 @@ func (s *stmt) copySTDIN(ctx context.Context) {
 	var streamToUse io.Reader
 	streamToUse = os.Stdin
 
+	var copyBlockSize = stdInDefaultCopyBlockSize
+
 	if vCtx, ok := ctx.(VerticaContext); ok {
 		streamToUse = vCtx.GetInputStream()
+		copyBlockSize = vCtx.GetCopyBlockSizeBytes()
 	}
 
-	block := make([]byte, stdInDefaultCopyBlockSize)
+	block := make([]byte, copyBlockSize)
 	for {
 		bytesRead, err := streamToUse.Read(block)
 		if err == io.EOF {
