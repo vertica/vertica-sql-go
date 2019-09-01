@@ -237,7 +237,33 @@ The following transaction isolation levels are supported:
 
  <b>&#8224;</b> Although Vertica supports the grammars for these transaction isolation levels, they are internally promoted to stronger isolation levels.
 
-## Example
+## COPY modes Supported
+
+### COPY FROM STDIN
+vertica-sql-go supports copying from stdin. This allows you to write a command-line tool that accepts stdin as an
+input and passes it to Vertica for processing. An example:
+
+```go
+_, err = connDB.ExecContext(ctx, "COPY stdin_data FROM STDIN DELIMITER ','")
+```
+This will process input from stdin until an EOF is reached.
+
+### COPY FROM STDIN with alternate stream
+In your code, you may also supply a different io.Reader object (such as *File) from which to supply your data.
+Simply create a new context that contains that stream as the 'stdio.stream' value. Example:
+
+```go
+fp, err := os.OpenFile("./resources/csv/sample_data.csv", os.O_RDONLY, 0600)
+...
+_, err = connDB.ExecContext(
+    context.WithValue(ctx, "stdin.stream", fp),
+    "COPY stdin_data FROM STDIN DELIMITER ','")
+```
+
+If this value is not found, the stream will fall back to os.stdin. If you supply an incompatible object type,
+a load error will occur.
+
+## Full Example
 
 By following the above instructions, you should be able to successfully create a connection to your Vertica instance and perform the operations you require. A complete example program is listed below:
 
