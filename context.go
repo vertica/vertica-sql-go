@@ -47,8 +47,8 @@ const (
 type VerticaContext interface {
 	context.Context
 
-	SetInputStream(inputStream io.Reader) error
-	GetInputStream() io.Reader
+	SetCopyInputStream(inputStream io.Reader) error
+	GetCopyInputStream() io.Reader
 
 	SetCopyBlockSizeBytes(blockSize int) error
 	GetCopyBlockSizeBytes() int
@@ -61,6 +61,7 @@ type verticaContext struct {
 	blockSize   int
 }
 
+// NewVerticaContext creates a new context that inherits the values and behavior of the provided parent context.
 func NewVerticaContext(parentCtx context.Context) VerticaContext {
 	return &verticaContext{
 		Context:     parentCtx,
@@ -69,7 +70,9 @@ func NewVerticaContext(parentCtx context.Context) VerticaContext {
 	}
 }
 
-func (c *verticaContext) SetInputStream(inputStream io.Reader) error {
+// SetCopyInputStream sets the input stream to be used when copying from stdin. If not set, copying from stdin will
+// read from os.stdin.
+func (c *verticaContext) SetCopyInputStream(inputStream io.Reader) error {
 	if inputStream != nil {
 		c.inputStream = inputStream
 		return nil
@@ -78,10 +81,13 @@ func (c *verticaContext) SetInputStream(inputStream io.Reader) error {
 	return fmt.Errorf("cannot SetInputStream to a nil value")
 }
 
-func (c *verticaContext) GetInputStream() io.Reader {
+// GetCopyInputStream returns the currently active input stream to be used when copying from stdin.
+func (c *verticaContext) GetCopyInputStream() io.Reader {
 	return c.inputStream
 }
 
+// SetCopyBlockSizeBytes sets the size of the buffer used to transfer from the input stream to Vertica. By
+// default, it's 65536 (64k). It must be at least 16384 (16k) bytes.
 func (c *verticaContext) SetCopyBlockSizeBytes(blockSize int) error {
 	if blockSize < minCopyBlockSize {
 		return fmt.Errorf("cannot set copy block size to less than %d", minCopyBlockSize)
@@ -92,6 +98,7 @@ func (c *verticaContext) SetCopyBlockSizeBytes(blockSize int) error {
 	return nil
 }
 
+// GetCopyBlockSizeBytes gets the size of the buffer used to transfer from the input stream to Vertica.
 func (c *verticaContext) GetCopyBlockSizeBytes() int {
 	return c.blockSize
 }

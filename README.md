@@ -250,13 +250,14 @@ This will process input from stdin until an EOF is reached.
 
 ### COPY FROM STDIN with alternate stream
 In your code, you may also supply a different io.Reader object (such as *File) from which to supply your data.
-Simply create a new context that contains that stream as the 'stdio.stream' value. Example:
+Simply create a new VerticaContext, set the copy input stream, and provide this context to the execute call.
+An example:
 
 ```go
 fp, err := os.OpenFile("./resources/csv/sample_data.csv", os.O_RDONLY, 0600)
 ...
 vCtx := NewVerticaContext(ctx)
-vCtx.SetInputStream(fp)
+vCtx.SetCopyInputStream(fp)
 
 _, err = connDB.ExecContext(vCtx, "COPY stdin_data FROM STDIN DELIMITER ','")
 ```

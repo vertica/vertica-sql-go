@@ -648,7 +648,7 @@ func TestSTDINCopyWithStream(t *testing.T) {
 	defer fp.Close()
 
 	vCtx := NewVerticaContext(ctx)
-	vCtx.SetInputStream(fp)
+	vCtx.SetCopyInputStream(fp)
 	vCtx.SetCopyBlockSizeBytes(32768)
 
 	_, err = connDB.ExecContext(vCtx, "COPY stdin_data FROM STDIN DELIMITER ','")

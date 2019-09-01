@@ -250,7 +250,7 @@ func (s *stmt) copySTDIN(ctx context.Context) {
 	var copyBlockSize = stdInDefaultCopyBlockSize
 
 	if vCtx, ok := ctx.(VerticaContext); ok {
-		streamToUse = vCtx.GetInputStream()
+		streamToUse = vCtx.GetCopyInputStream()
 		copyBlockSize = vCtx.GetCopyBlockSizeBytes()
 	}
 
