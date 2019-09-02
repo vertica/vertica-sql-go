@@ -73,12 +73,13 @@ func NewVerticaContext(parentCtx context.Context) VerticaContext {
 // SetCopyInputStream sets the input stream to be used when copying from stdin. If not set, copying from stdin will
 // read from os.stdin.
 func (c *verticaContext) SetCopyInputStream(inputStream io.Reader) error {
-	if inputStream != nil {
-		c.inputStream = inputStream
-		return nil
+	if inputStream == nil {
+		return fmt.Errorf("cannot SetInputStream to a nil value")
 	}
 
-	return fmt.Errorf("cannot SetInputStream to a nil value")
+	c.inputStream = inputStream
+
+	return nil
 }
 
 // GetCopyInputStream returns the currently active input stream to be used when copying from stdin.
