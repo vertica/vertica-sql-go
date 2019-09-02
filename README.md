@@ -262,8 +262,7 @@ vCtx.SetCopyInputStream(fp)
 _, err = connDB.ExecContext(vCtx, "COPY stdin_data FROM STDIN DELIMITER ','")
 ```
 
-If this value is not found, the stream will fall back to os.stdin. If you supply an incompatible object type,
-a load error will occur.
+If you provide a VerticaContext but don't set a copy input stream, the driver will fall back to os.stdin.
 
 ## Full Example
 

@@ -41,7 +41,7 @@ import (
 
 const (
 	minCopyBlockSize          = 16384
-	stdInDefaultCopyBlockSize = 65535
+	stdInDefaultCopyBlockSize = 65536
 )
 
 type VerticaContext interface {
