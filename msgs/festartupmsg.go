@@ -49,8 +49,13 @@ type FEStartupMsg struct {
 func (m *FEStartupMsg) Flatten() ([]byte, byte) {
 
 	buf := newMsgBuffer()
+	const fixedProtocolVersion uint32 = 0x00030005
+	buf.appendUint32(fixedProtocolVersion)
 
+	// Requested protocol version
+	buf.appendString("protocol_version")
 	buf.appendUint32(m.ProtocolVersion)
+	buf.appendBytes([]byte{0})
 
 	if len(m.Username) > 0 {
 		buf.appendLabeledString("user", m.Username)
