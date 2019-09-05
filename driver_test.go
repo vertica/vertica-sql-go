@@ -551,6 +551,26 @@ func TestStmtOrderingInThreads(t *testing.T) {
 		{query: "SELECT a, b, c FROM stmt_thread_test", resultColumns: []string{"a", "b", "c"}},
 		{query: "SELECT a, b, c, d FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d"}},
 		{query: "SELECT a, b, c, d, e FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d", "e"}},
+		{query: "SELECT a FROM stmt_thread_test", resultColumns: []string{"a"}},
+		{query: "SELECT a, b FROM stmt_thread_test", resultColumns: []string{"a", "b"}},
+		{query: "SELECT a, b, c FROM stmt_thread_test", resultColumns: []string{"a", "b", "c"}},
+		{query: "SELECT a, b, c, d FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d"}},
+		{query: "SELECT a, b, c, d, e FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d", "e"}},
+		{query: "SELECT a FROM stmt_thread_test", resultColumns: []string{"a"}},
+		{query: "SELECT a, b FROM stmt_thread_test", resultColumns: []string{"a", "b"}},
+		{query: "SELECT a, b, c FROM stmt_thread_test", resultColumns: []string{"a", "b", "c"}},
+		{query: "SELECT a, b, c, d FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d"}},
+		{query: "SELECT a, b, c, d, e FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d", "e"}},
+		{query: "SELECT a FROM stmt_thread_test", resultColumns: []string{"a"}},
+		{query: "SELECT a, b FROM stmt_thread_test", resultColumns: []string{"a", "b"}},
+		{query: "SELECT a, b, c FROM stmt_thread_test", resultColumns: []string{"a", "b", "c"}},
+		{query: "SELECT a, b, c, d FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d"}},
+		{query: "SELECT a, b, c, d, e FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d", "e"}},
+		{query: "SELECT a FROM stmt_thread_test", resultColumns: []string{"a"}},
+		{query: "SELECT a, b FROM stmt_thread_test", resultColumns: []string{"a", "b"}},
+		{query: "SELECT a, b, c FROM stmt_thread_test", resultColumns: []string{"a", "b", "c"}},
+		{query: "SELECT a, b, c, d FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d"}},
+		{query: "SELECT a, b, c, d, e FROM stmt_thread_test", resultColumns: []string{"a", "b", "c", "d", "e"}},
 	}
 
 	var wg sync.WaitGroup
@@ -565,6 +585,7 @@ func TestStmtOrderingInThreads(t *testing.T) {
 			rows, err := stmt.QueryContext(ctx)
 			assertNoErr(t, err)
 			defer rows.Close()
+			assertNext(t, rows)
 
 			columns, err := rows.Columns()
 			assertNoErr(t, err)
@@ -574,6 +595,88 @@ func TestStmtOrderingInThreads(t *testing.T) {
 
 	wg.Wait()
 
+}
+
+func TestSTDINCopy(t *testing.T) {
+	connDB := openConnection(t, "test_stdin_copy_pre")
+	defer closeConnection(t, connDB, "test_stdin_copy_post")
+
+	// Do some trickery with os.Stdin, but make sure to put it back when we're done.
+	oldStdIn := os.Stdin
+
+	fp, err := os.OpenFile("./resources/csv/sample_data.csv", os.O_RDONLY, 0600)
+	assertNoErr(t, err)
+
+	os.Stdin = fp
+	defer func() { os.Stdin.Close(); os.Stdin = oldStdIn }()
+
+	_, err = connDB.ExecContext(ctx, "COPY stdin_data FROM STDIN DELIMITER ','")
+	assertNoErr(t, err)
+
+	rows, err := connDB.QueryContext(ctx, "SELECT * FROM stdin_data")
+	assertNoErr(t, err)
+
+	defer rows.Close()
+
+	columns, _ := rows.Columns()
+	assertEqual(t, len(columns), 2)
+
+	names := []string{"roger", "siting", "tom", "yang", "john"}
+	ids := []int{123, 456, 789, 333, 555}
+	matched := 0
+	var name string
+	var id int
+
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&name, &id))
+		assertEqual(t, name, names[matched])
+		assertEqual(t, id, ids[matched])
+		matched++
+	}
+
+	assertEqual(t, matched, 5)
+	assertNoNext(t, rows)
+}
+
+func TestSTDINCopyWithStream(t *testing.T) {
+	connDB := openConnection(t, "test_stdin_copy_pre")
+	defer closeConnection(t, connDB, "test_stdin_copy_post")
+
+	fp, err := os.OpenFile("./resources/csv/sample_data.csv", os.O_RDONLY, 0600)
+	assertNoErr(t, err)
+
+	defer fp.Close()
+
+	vCtx := NewVerticaContext(ctx)
+	_ = vCtx.SetCopyInputStream(fp)
+	_ = vCtx.SetCopyBlockSizeBytes(32768)
+
+	_, err = connDB.ExecContext(vCtx, "COPY stdin_data FROM STDIN DELIMITER ','")
+	assertNoErr(t, err)
+
+	rows, err := connDB.QueryContext(ctx, "SELECT * FROM stdin_data")
+	assertNoErr(t, err)
+
+	defer rows.Close()
+
+	columns, _ := rows.Columns()
+	assertEqual(t, len(columns), 2)
+
+	names := []string{"roger", "siting", "tom", "yang", "john"}
+	ids := []int{123, 456, 789, 333, 555}
+	matched := 0
+	var name string
+	var id int
+
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&name, &id))
+		assertEqual(t, name, names[matched])
+		assertEqual(t, id, ids[matched])
+		matched++
+	}
+
+	assertEqual(t, matched, 5)
+	assertNoNext(t, rows)
 }
 
 func init() {

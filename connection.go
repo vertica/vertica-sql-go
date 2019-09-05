@@ -40,6 +40,7 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -58,6 +59,8 @@ var (
 
 // Connection represents a connection to Vertica
 type connection struct {
+	driver.Conn
+
 	conn             net.Conn
 	connURL          *url.URL
 	parameters       map[string]string
@@ -70,6 +73,7 @@ type connection struct {
 	sessionID        string
 	serverTZOffset   string
 	sessMutex        sync.Mutex
+	inputStream      io.Reader
 }
 
 // Begin - Begin starts and returns a new transaction. (DEPRECATED)
@@ -360,7 +364,7 @@ func (v *connection) defaultMessageHandler(bMsg msgs.BackEndMsg) (bool, error) {
 	default:
 		handled = false
 		err = fmt.Errorf("unhandled message: %v", msg)
-		//connectionLogger.Warn("%v", err)
+		connectionLogger.Warn("%v", err)
 	}
 
 	return handled, err

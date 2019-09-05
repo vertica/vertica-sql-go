@@ -198,7 +198,7 @@ func (s *stmt) QueryContextRaw(ctx context.Context, args []driver.NamedValue) (*
 			return emptyRowSet, err
 		}
 
-		return s.collectResults()
+		return s.collectResults(ctx)
 	}
 
 	rows := emptyRowSet
@@ -234,10 +234,40 @@ func (s *stmt) QueryContextRaw(ctx context.Context, args []driver.NamedValue) (*
 			return emptyRowSet, nil
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg:
 			return rows, nil
+		case *msgs.BEInitSTDINLoadMsg:
+			s.copySTDIN(ctx)
 		default:
 			s.conn.defaultMessageHandler(bMsg)
 		}
 	}
+}
+
+func (s *stmt) copySTDIN(ctx context.Context) {
+
+	var streamToUse io.Reader
+	streamToUse = os.Stdin
+
+	var copyBlockSize = stdInDefaultCopyBlockSize
+
+	if vCtx, ok := ctx.(VerticaContext); ok {
+		streamToUse = vCtx.GetCopyInputStream()
+		copyBlockSize = vCtx.GetCopyBlockSizeBytes()
+	}
+
+	block := make([]byte, copyBlockSize)
+	for {
+		bytesRead, err := streamToUse.Read(block)
+		if err == io.EOF {
+			s.conn.sendMessage(&msgs.FELoadDoneMsg{})
+			break
+		}
+		if err != nil {
+			s.conn.sendMessage(&msgs.FELoadFailMsg{err.Error()})
+			break
+		}
+		s.conn.sendMessage(&msgs.FELoadDataMsg{Data: block, UsedBytes: bytesRead})
+	}
+	s.conn.sendMessage(&msgs.FEFlushMsg{})
 }
 
 func (s *stmt) interpolate(args []driver.NamedValue) (string, error) {
@@ -366,7 +396,7 @@ func (s *stmt) bindAndExecute(portalName string, args []driver.NamedValue) error
 	return nil
 }
 
-func (s *stmt) collectResults() (*rows, error) {
+func (s *stmt) collectResults(ctx context.Context) (*rows, error) {
 	rows := emptyRowSet
 
 	if s.lastRowDesc != nil {
@@ -394,6 +424,8 @@ func (s *stmt) collectResults() (*rows, error) {
 			continue
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg, *msgs.BECmdCompleteMsg:
 			return rows, nil
+		case *msgs.BEInitSTDINLoadMsg:
+			s.copySTDIN(ctx)
 		default:
 			_, _ = s.conn.defaultMessageHandler(msg)
 		}
