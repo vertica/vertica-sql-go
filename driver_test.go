@@ -39,7 +39,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"os/user"
 	"strings"
 	"sync"
 	"testing"
@@ -50,11 +49,6 @@ import (
 
 var (
 	testLogger         = logger.New("test")
-	verticaUserName    string
-	verticaHostPort    string
-	verticaPassword    string
-	usePreparedStmts   bool
-	sslMode            string
 	myDBConnectString  string
 	otherConnectString string
 	badConnectString   string
@@ -679,37 +673,29 @@ func TestSTDINCopyWithStream(t *testing.T) {
 	assertNoNext(t, rows)
 }
 
+var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
+var verticaPassword = flag.String("password", os.Getenv("VERTICA_TEST_PASSWORD"), "Vertica password for this user")
+var verticaHostPort = flag.String("locator", "localhost:5433", "Vertica's host and port")
+var tlsMode = flag.String("tlsmode", "none", "SSL/TLS mode (none, server, server-strict)")
+var usePreparedStmts = flag.Bool("use_prepared_statements", true, "whether to use prepared statements for all queries/executes")
+
 func init() {
-	userObj, _ := user.Current()
-
-	testLogger.Info("default user name: %s", userObj.Username)
-
-	defaultPassword := os.Getenv("VERTICA_TEST_PASSWORD")
-
-	flag.StringVar(&verticaUserName, "user", userObj.Username, "the user name to connect to Vertica")
-	flag.StringVar(&verticaPassword, "password", defaultPassword, "Vertica password for this user")
-	flag.StringVar(&verticaHostPort, "locator", "localhost:5433", "Vertica's host and port")
-	flag.StringVar(&sslMode, "tlsmode", "none", "SSL/TLS mode (none, server, server-strict)")
-	flag.BoolVar(&usePreparedStmts, "use_prepared_statements", true, "whether to use prepared statements for all queries/executes")
-
-	flag.Parse()
-
-	testLogger.Info("user name: %s", verticaUserName)
+	testLogger.Info("user name: %s", *verticaUserName)
 	testLogger.Info("password : **********")
-	testLogger.Info("locator  : %s", verticaHostPort)
-	testLogger.Info("tlsmode  : %s", sslMode)
+	testLogger.Info("locator  : %s", *verticaHostPort)
+	testLogger.Info("tlsmode  : %s", *tlsMode)
 
 	usePreparedStmtsString := "use_prepared_statements="
 
-	if usePreparedStmts {
+	if *usePreparedStmts {
 		usePreparedStmtsString += "1"
 	} else {
 		usePreparedStmtsString += "0"
 	}
 
-	myDBConnectString = "vertica://" + verticaUserName + ":" + verticaPassword + "@" + verticaHostPort + "/" + verticaUserName + "?" + usePreparedStmtsString + "&ssl=" + sslMode
-	otherConnectString = "vertica://TestGuy:TestGuyPass@" + verticaHostPort + "/TestGuy?tlsmode=" + sslMode
-	badConnectString = "vertica://TestGuy:TestGuyBadPass@" + verticaHostPort + "/TestGuy?tlsmode=" + sslMode
+	myDBConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@" + *verticaHostPort + "/" + *verticaUserName + "?" + usePreparedStmtsString + "&tlsMode=" + *tlsMode
+	otherConnectString = "vertica://TestGuy:TestGuyPass@" + *verticaHostPort + "/TestGuy?tlsmode=" + *tlsMode
+	badConnectString = "vertica://TestGuy:TestGuyBadPass@" + *verticaHostPort + "/TestGuy?tlsmode=" + *tlsMode
 
 	ctx = context.Background()
 }
