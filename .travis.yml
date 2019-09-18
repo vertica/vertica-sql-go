@@ -2,7 +2,6 @@ language: go
 
 os:
   - linux
-  - windows
 
 go:
   - 1.11.x
@@ -14,7 +13,7 @@ go_import_path: github.com/vertica/vertica-sql-go
 before_install:
   - git clone https://github.com/jbfavre/docker-vertica.git
   - curl $VERTICA_CE_URL --create-dirs -o docker-vertica/packages/vertica-ce.latest.rpm
-  - docker build --platform linux -f docker-vertica/Dockerfile.centos.7_9.x --build-arg VERTICA_PACKAGE=vertica-ce.latest.rpm -t jbfavre/vertica docker-vertica
+  - docker build -f docker-vertica/Dockerfile.centos.7_9.x --build-arg VERTICA_PACKAGE=vertica-ce.latest.rpm -t jbfavre/vertica docker-vertica
   - docker images
   - docker run --hostname vertica-docker --name vertica_docker -d -p 5433:5433 jbfavre/vertica
   - sleep 60
