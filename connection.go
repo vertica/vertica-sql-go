@@ -193,8 +193,10 @@ func (v *connection) recvMessage() (msgs.BackEndMsg, error) {
 
 		msgBytes := make([]byte, msgSize)
 
-		if err = v.readAll(msgBytes); err != nil {
-			return nil, err
+		if msgSize > 0 {
+			if err = v.readAll(msgBytes); err != nil {
+				return nil, err
+			}
 		}
 
 		bem, err := msgs.CreateBackEndMsg(msgHeader[0], msgBytes)
@@ -229,11 +231,13 @@ func (v *connection) sendMessage(msg msgs.FrontEndMsg) error {
 
 		_, result = v.conn.Write(sizeBytes)
 
-		if result == nil {
-			_, result = v.conn.Write(msgBytes)
-
+		if len(msgBytes) > 0 {
 			if result == nil {
-				connectionLogger.Debug("-> " + msg.String())
+				_, result = v.conn.Write(msgBytes)
+
+				if result == nil {
+					connectionLogger.Debug("-> " + msg.String())
+				}
 			}
 		}
 	}
