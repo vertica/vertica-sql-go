@@ -680,6 +680,7 @@ var tlsMode = flag.String("tlsmode", "none", "SSL/TLS mode (none, server, server
 var usePreparedStmts = flag.Bool("use_prepared_statements", true, "whether to use prepared statements for all queries/executes")
 
 func init() {
+	flag.Parse()
 	testLogger.Info("user name: %s", *verticaUserName)
 	testLogger.Info("password : **********")
 	testLogger.Info("locator  : %s", *verticaHostPort)
