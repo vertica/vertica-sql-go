@@ -33,7 +33,6 @@ package vertigo
 // THE SOFTWARE.
 
 import (
-	"database/sql"
 	"database/sql/driver"
 	"encoding/hex"
 	"fmt"
@@ -88,60 +87,31 @@ func (r *rows) Next(dest []driver.Value) error {
 	thisRow := r.resultData[r.readIndex]
 
 	for idx, colVal := range thisRow.RowData {
-
+		if colVal == nil {
+			dest[idx] = nil
+			continue
+		}
 		switch r.columnDefs.Columns[idx].DataTypeOID {
 		case common.ColTypeBoolean: // to boolean
-			if colVal == nil {
-				dest[idx] = sql.NullBool{}
+			if colVal[0] == 't' {
+				dest[idx] = true
 			} else {
-				if colVal[0] == 't' {
-					dest[idx] = true
-				} else {
-					dest[idx] = false
-				}
+				dest[idx] = false
 			}
 		case common.ColTypeInt64: // to integer
-			if colVal == nil {
-				dest[idx] = sql.NullInt64{}
-			} else {
-				dest[idx], _ = strconv.Atoi(string(colVal))
-			}
+			dest[idx], _ = strconv.Atoi(string(colVal))
 		case common.ColTypeVarChar, common.ColTypeLongVarChar, common.ColTypeChar, common.ColTypeUUID: // stays string, convert char to string
-			if colVal == nil {
-				dest[idx] = sql.NullString{}
-			} else {
-				dest[idx] = string(colVal)
-			}
+			dest[idx] = string(colVal)
 		case common.ColTypeFloat64, common.ColTypeNumeric: // to float64
-			if colVal == nil {
-				dest[idx] = sql.NullFloat64{}
-			} else {
-				dest[idx], _ = strconv.ParseFloat(string(colVal), 64)
-			}
+			dest[idx], _ = strconv.ParseFloat(string(colVal), 64)
 		case common.ColTypeTimestamp: // to time.Time from YYYY-MM-DD hh:mm:ss
-			if colVal == nil {
-				dest[idx] = sql.NullString{}
-			} else {
-				dest[idx], _ = parseTimestampTZColumn(string(colVal) + r.tzOffset)
-			}
+			dest[idx], _ = parseTimestampTZColumn(string(colVal) + r.tzOffset)
 		case common.ColTypeTimestampTZ:
-			if colVal == nil {
-				dest[idx] = sql.NullString{}
-			} else {
-				dest[idx], _ = parseTimestampTZColumn(string(colVal))
-			}
+			dest[idx], _ = parseTimestampTZColumn(string(colVal))
 		case common.ColTypeVarBinary, common.ColTypeLongVarBinary, common.ColTypeBinary: // to []byte - this one's easy
-			if colVal == nil {
-				dest[idx] = sql.NullString{}
-			} else {
-				dest[idx] = hex.EncodeToString(colVal)
-			}
+			dest[idx] = hex.EncodeToString(colVal)
 		default:
-			if colVal == nil {
-				dest[idx] = sql.NullString{}
-			} else {
-				dest[idx] = string(colVal)
-			}
+			dest[idx] = string(colVal)
 		}
 	}
 

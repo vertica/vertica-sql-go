@@ -438,36 +438,40 @@ func TestValueTypes(t *testing.T) {
 	assertEqual(t, numericVal, 1.2345)
 
 	assertNext(t, rows)
-	nils := make([]interface{}, 13)
-	assertNoErr(t, rows.Scan(&nils[0], &nils[1], &nils[2], &nils[3], &nils[4], &nils[5], &nils[6], &nils[7],
-		&nils[8], &nils[9], &nils[10], &nils[11], &nils[12]))
 
-	_, ok := nils[0].(sql.NullBool)
-	assertTrue(t, ok)
-	_, ok = nils[1].(sql.NullInt64)
-	assertTrue(t, ok)
-	_, ok = nils[2].(sql.NullFloat64)
-	assertTrue(t, ok)
-	_, ok = nils[3].(sql.NullString)
-	assertTrue(t, ok)
-	_, ok = nils[4].(sql.NullString)
-	assertTrue(t, ok)
-	_, ok = nils[5].(sql.NullString)
-	assertTrue(t, ok)
-	_, ok = nils[6].(sql.NullString)
-	assertTrue(t, ok)
-	_, ok = nils[7].(sql.NullString)
-	assertTrue(t, ok)
-	_, ok = nils[8].(sql.NullString)
-	assertTrue(t, ok)
-	_, ok = nils[9].(sql.NullString)
-	assertTrue(t, ok)
-	_, ok = nils[10].(sql.NullString)
-	assertTrue(t, ok)
-	_, ok = nils[11].(sql.NullString)
-	assertTrue(t, ok)
-	_, ok = nils[12].(sql.NullFloat64)
-	assertTrue(t, ok)
+	var (
+		nullBoolVal        sql.NullBool
+		nullIntVal         sql.NullInt64
+		nullFloatVal       sql.NullFloat64
+		nullCharVal        sql.NullString
+		nullVarCharVal     sql.NullString
+		nullTimestampVal   sql.NullString
+		nullTimestampTZVal sql.NullString
+		nullVarBinVal      sql.NullString
+		nullUuidVal        sql.NullString
+		nullLVarCharVal    sql.NullString
+		nullLVarBinaryVal  sql.NullString
+		nullBinaryVal      sql.NullString
+		nullNumericVal     sql.NullFloat64
+	)
+
+	assertNoErr(t, rows.Scan(&nullBoolVal, &nullIntVal, &nullFloatVal, &nullCharVal,
+		&nullVarCharVal, &nullTimestampVal, &nullTimestampTZVal, &nullVarBinVal, &nullUuidVal,
+		&nullLVarCharVal, &nullLVarBinaryVal, &nullBinaryVal, &nullNumericVal))
+
+	assertTrue(t, !nullBoolVal.Valid)
+	assertTrue(t, !nullIntVal.Valid)
+	assertTrue(t, !nullFloatVal.Valid)
+	assertTrue(t, !nullCharVal.Valid)
+	assertTrue(t, !nullVarCharVal.Valid)
+	assertTrue(t, !nullTimestampVal.Valid)
+	assertTrue(t, !nullTimestampTZVal.Valid)
+	assertTrue(t, !nullVarBinVal.Valid)
+	assertTrue(t, !nullUuidVal.Valid)
+	assertTrue(t, !nullLVarCharVal.Valid)
+	assertTrue(t, !nullLVarBinaryVal.Valid)
+	assertTrue(t, !nullBinaryVal.Valid)
+	assertTrue(t, !nullNumericVal.Valid)
 
 	assertNoErr(t, rows.Close())
 }
@@ -607,7 +611,7 @@ func TestSTDINCopy(t *testing.T) {
 	_, err = connDB.ExecContext(ctx, "COPY stdin_data FROM STDIN DELIMITER ','")
 	assertNoErr(t, err)
 
-	rows, err := connDB.QueryContext(ctx, "SELECT * FROM stdin_data")
+	rows, err := connDB.QueryContext(ctx, "SELECT name,id FROM stdin_data as t(name,id) order by name")
 	assertNoErr(t, err)
 
 	defer rows.Close()
@@ -615,8 +619,8 @@ func TestSTDINCopy(t *testing.T) {
 	columns, _ := rows.Columns()
 	assertEqual(t, len(columns), 2)
 
-	names := []string{"roger", "siting", "tom", "yang", "john"}
-	ids := []int{123, 456, 789, 333, 555}
+	names := []string{"john", "roger", "siting", "tom", "yang"}
+	ids := []int{555, 123, 456, 789, 333}
 	matched := 0
 	var name string
 	var id int
@@ -648,7 +652,7 @@ func TestSTDINCopyWithStream(t *testing.T) {
 	_, err = connDB.ExecContext(vCtx, "COPY stdin_data FROM STDIN DELIMITER ','")
 	assertNoErr(t, err)
 
-	rows, err := connDB.QueryContext(ctx, "SELECT * FROM stdin_data")
+	rows, err := connDB.QueryContext(ctx, "SELECT name,id FROM stdin_data as t(name,id) order by name")
 	assertNoErr(t, err)
 
 	defer rows.Close()
@@ -656,8 +660,8 @@ func TestSTDINCopyWithStream(t *testing.T) {
 	columns, _ := rows.Columns()
 	assertEqual(t, len(columns), 2)
 
-	names := []string{"roger", "siting", "tom", "yang", "john"}
-	ids := []int{123, 456, 789, 333, 555}
+	names := []string{"john", "roger", "siting", "tom", "yang"}
+	ids := []int{555, 123, 456, 789, 333}
 	matched := 0
 	var name string
 	var id int
@@ -680,6 +684,10 @@ var tlsMode = flag.String("tlsmode", "none", "SSL/TLS mode (none, server, server
 var usePreparedStmts = flag.Bool("use_prepared_statements", true, "whether to use prepared statements for all queries/executes")
 
 func init() {
+	// One or both lines below are necessary depending on your go version
+	// testing.Init()
+	// flag.Parse()
+
 	testLogger.Info("user name: %s", *verticaUserName)
 	testLogger.Info("password : **********")
 	testLogger.Info("locator  : %s", *verticaHostPort)
