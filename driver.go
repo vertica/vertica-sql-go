@@ -35,7 +35,6 @@ package vertigo
 import (
 	"database/sql"
 	"database/sql/driver"
-	"fmt"
 	"os"
 	"strconv"
 
@@ -58,7 +57,7 @@ var driverLogger = logger.New("driver")
 func (d *Driver) Open(connString string) (driver.Conn, error) {
 	conn, err := newConnection(connString)
 	if err != nil {
-		driverLogger.Error(fmt.Sprint(err))
+		driverLogger.Error(err.Error())
 	}
 	return conn, err
 }
