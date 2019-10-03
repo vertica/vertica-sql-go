@@ -35,7 +35,6 @@ package vertigo
 import (
 	"database/sql"
 	"database/sql/driver"
-	"fmt"
 	"os"
 	"strconv"
 
@@ -47,7 +46,7 @@ type Driver struct{}
 
 const (
 	driverName      string = "vertica-sql-go"
-	driverVersion   string = "0.1.4"
+	driverVersion   string = "0.1.5"
 	protocolVersion uint32 = 0x00030008
 )
 
@@ -58,7 +57,7 @@ var driverLogger = logger.New("driver")
 func (d *Driver) Open(connString string) (driver.Conn, error) {
 	conn, err := newConnection(connString)
 	if err != nil {
-		driverLogger.Error(fmt.Sprint(err))
+		driverLogger.Error(err.Error())
 	}
 	return conn, err
 }
