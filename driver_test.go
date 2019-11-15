@@ -691,7 +691,6 @@ func TestHangAfterError(t *testing.T) {
 	rows, err = connDB.QueryContext(ctx, "SELECT 1+'abcd'")
 
 	assertErr(t, err, "Invalid")
-	defer rows.Close()
 
 	rows, err = connDB.QueryContext(ctx, "SELECT 2")
 	defer rows.Close()
@@ -710,7 +709,7 @@ var usePreparedStmts = flag.Bool("use_prepared_statements", true, "whether to us
 func init() {
 	// One or both lines below are necessary depending on your go version
 	// testing.Init()
-	flag.Parse()
+	// flag.Parse()
 
 	testLogger.Info("user name: %s", *verticaUserName)
 	testLogger.Info("password : **********")
