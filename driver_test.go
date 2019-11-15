@@ -677,6 +677,30 @@ func TestSTDINCopyWithStream(t *testing.T) {
 	assertNoNext(t, rows)
 }
 
+func TestHangAfterError(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+
+	rows, err := connDB.QueryContext(ctx, "SELECT 1")
+	defer rows.Close()
+
+	assertNoErr(t, err)
+	assertNext(t, rows)
+	assertNoNext(t, rows)
+
+	rows, err = connDB.QueryContext(ctx, "SELECT 1+'abcd'")
+
+	assertErr(t, err, "Invalid")
+	defer rows.Close()
+
+	rows, err = connDB.QueryContext(ctx, "SELECT 2")
+	defer rows.Close()
+
+	assertNoErr(t, err)
+	assertNext(t, rows)
+	assertNoNext(t, rows)
+}
+
 var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
 var verticaPassword = flag.String("password", os.Getenv("VERTICA_TEST_PASSWORD"), "Vertica password for this user")
 var verticaHostPort = flag.String("locator", "localhost:5433", "Vertica's host and port")
@@ -686,7 +710,7 @@ var usePreparedStmts = flag.Bool("use_prepared_statements", true, "whether to us
 func init() {
 	// One or both lines below are necessary depending on your go version
 	// testing.Init()
-	// flag.Parse()
+	flag.Parse()
 
 	testLogger.Info("user name: %s", *verticaUserName)
 	testLogger.Info("password : **********")
