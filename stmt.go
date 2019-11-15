@@ -88,8 +88,8 @@ func (s *stmt) Close() error {
 	if s.parseState == parseStateParsed {
 		closeMsg := &msgs.FECloseMsg{TargetType: msgs.CmdTargetTypeStatement, TargetName: s.preparedName}
 
-		s.conn.lockSessionMutex()
-		defer s.conn.unlockSessionMutex()
+		//s.conn.lockSessionMutex()
+		//defer s.conn.unlockSessionMutex()
 
 		if err := s.conn.sendMessage(closeMsg); err != nil {
 			return err
@@ -354,6 +354,7 @@ func (s *stmt) prepareAndDescribe() error {
 
 		switch msg := bMsg.(type) {
 		case *msgs.BEErrorMsg:
+			s.conn.sync()
 			return msg.ToErrorType()
 		case *msgs.BEParseCompleteMsg:
 			s.parseState = parseStateParsed

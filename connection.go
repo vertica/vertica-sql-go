@@ -234,16 +234,14 @@ func (v *connection) sendMessage(msg msgs.FrontEndMsg) error {
 		if result == nil {
 			if len(msgBytes) > 0 {
 				_, result = v.conn.Write(msgBytes)
-
-				if result == nil {
-					connectionLogger.Debug("-> " + msg.String())
-				}
 			}
 		}
 	}
 
 	if result != nil {
 		connectionLogger.Error("-> FAILED SENDING "+msg.String()+": %v", result.Error())
+	} else {
+		connectionLogger.Debug("-> " + msg.String())
 	}
 
 	return result
@@ -471,6 +469,10 @@ func (v *connection) authSendSHA512Password(extraAuthData []byte) error {
 	msg := &msgs.FEPasswordMsg{PasswordData: hash2}
 
 	return v.sendMessage(msg)
+}
+
+func (v *connection) sync() error {
+	return v.sendMessage(&msgs.FESyncMsg{})
 }
 
 func (v *connection) lockSessionMutex() {
