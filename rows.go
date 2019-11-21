@@ -33,10 +33,13 @@ package vertigo
 // THE SOFTWARE.
 
 import (
+	"context"
 	"database/sql/driver"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -49,12 +52,12 @@ type rows struct {
 	columnDefs *msgs.BERowDescMsg
 	resultData []*msgs.BEDataRowMsg
 
-	readIndex  int
-	writeIndex int
-	tzOffset   string
+	readIndex     int
+	tzOffset      string
+	inMemRowLimit int
+	resultCache   *os.File
 }
 
-var emptyRowSet *rows
 var paddingString = "000000"
 
 // Columns returns the names of all of the columns
@@ -70,13 +73,19 @@ func (r *rows) Columns() []string {
 // Close closes the read cursor
 // Interface: driver.Rows
 func (r *rows) Close() error {
+	if r.resultCache != nil {
+		name := r.resultCache.Name()
+		r.resultCache.Close()
+		return os.Remove(name)
+	}
+
 	return nil
 }
 
 // Next docs
 // Interface: driver.Rows
 func (r *rows) Next(dest []driver.Value) error {
-	if r.readIndex == r.writeIndex {
+	if r.readIndex == len(r.resultData) {
 		return io.EOF
 	}
 
@@ -138,32 +147,41 @@ func parseTimestampTZColumn(fullString string) (driver.Value, error) {
 }
 
 func (r *rows) addRow(resultData *msgs.BEDataRowMsg) {
-
-	if r.writeIndex == cap(r.resultData) {
-		newSlice := make([]*msgs.BEDataRowMsg, 2*r.writeIndex)
-		copy(newSlice, r.resultData)
-		r.resultData = newSlice
+	if r.inMemRowLimit == 0 || len(r.resultData) < r.inMemRowLimit {
+		r.resultData = append(r.resultData, resultData)
 	} else {
-		r.resultData = r.resultData[0 : r.writeIndex+1]
+		if r.resultCache == nil {
+			var err error
+			r.resultCache, err = ioutil.TempFile("", "vertica-sql-go.*.dat")
+			fmt.Fprintf(os.Stdout, "opening file %v\n", r.resultCache.Name())
+
+			if err != nil {
+				r.resultData = append(r.resultData, resultData)
+			}
+		} else {
+			fmt.Fprintf(r.resultCache, "line here!\n")
+		}
 	}
-
-	r.resultData[r.writeIndex] = resultData
-
-	r.writeIndex++
 }
 
-func newRows(columnsDefsMsg *msgs.BERowDescMsg, tzOffset string) *rows {
+func newRows(ctx context.Context, columnsDefsMsg *msgs.BERowDescMsg, tzOffset string) *rows {
 	res := &rows{
-		columnDefs: columnsDefsMsg,
-		resultData: make([]*msgs.BEDataRowMsg, 64),
-		tzOffset:   tzOffset,
+		columnDefs:    columnsDefsMsg,
+		resultData:    make([]*msgs.BEDataRowMsg, 0, 128),
+		tzOffset:      tzOffset,
+		inMemRowLimit: 0,
+		resultCache:   nil,
+	}
+
+	if vCtx, ok := ctx.(VerticaContext); ok {
+		res.inMemRowLimit = vCtx.GetInMemoryResultRowLimit()
 	}
 
 	return res
 }
 
-func init() {
+func newEmptyRows() *rows {
 	cdf := make([]*msgs.BERowDescColumnDef, 0)
 	be := &msgs.BERowDescMsg{Columns: cdf}
-	emptyRowSet = newRows(be, "")
+	return newRows(context.Background(), be, "")
 }

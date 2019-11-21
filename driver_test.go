@@ -700,6 +700,18 @@ func TestHangAfterError(t *testing.T) {
 	assertNoNext(t, rows)
 }
 
+func TestIssue43_EnableResultCache(t *testing.T) {
+
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+
+	vCtx := NewVerticaContext(context.Background())
+	vCtx.SetInMemoryResultRowLimit(5)
+
+	rows, _ := connDB.QueryContext(vCtx, "SELECT * FROM v_monitor.cpu_usage")
+	defer rows.Close()
+}
+
 var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
 var verticaPassword = flag.String("password", os.Getenv("VERTICA_TEST_PASSWORD"), "Vertica password for this user")
 var verticaHostPort = flag.String("locator", "localhost:5433", "Vertica's host and port")

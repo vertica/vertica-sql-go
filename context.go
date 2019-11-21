@@ -52,6 +52,9 @@ type VerticaContext interface {
 
 	SetCopyBlockSizeBytes(blockSize int) error
 	GetCopyBlockSizeBytes() int
+
+	SetInMemoryResultRowLimit(rowLimit int) error
+	GetInMemoryResultRowLimit() int
 }
 
 type verticaContext struct {
@@ -59,6 +62,7 @@ type verticaContext struct {
 
 	inputStream io.Reader
 	blockSize   int
+	rowLimit    int
 }
 
 // NewVerticaContext creates a new context that inherits the values and behavior of the provided parent context.
@@ -67,6 +71,7 @@ func NewVerticaContext(parentCtx context.Context) VerticaContext {
 		Context:     parentCtx,
 		inputStream: os.Stdin,
 		blockSize:   stdInDefaultCopyBlockSize,
+		rowLimit:    0,
 	}
 }
 
@@ -102,4 +107,18 @@ func (c *verticaContext) SetCopyBlockSizeBytes(blockSize int) error {
 // GetCopyBlockSizeBytes gets the size of the buffer used to transfer from the input stream to Vertica.
 func (c *verticaContext) GetCopyBlockSizeBytes() int {
 	return c.blockSize
+}
+
+func (c *verticaContext) SetInMemoryResultRowLimit(rowLimit int) error {
+	if rowLimit < 0 {
+		return fmt.Errorf("cannot set result limit to a negative number")
+	}
+
+	c.rowLimit = rowLimit
+
+	return nil
+}
+
+func (c *verticaContext) GetInMemoryResultRowLimit() int {
+	return c.rowLimit
 }
