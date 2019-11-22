@@ -60,6 +60,25 @@ func (b *BEDataRowMsg) CreateFromMsgBody(buf *msgBuffer) (BackEndMsg, error) {
 	return res, nil
 }
 
+func (b *BEDataRowMsg) RevertToBytes() []byte {
+	buf := newMsgBuffer()
+
+	buffLen := uint16(len(b.RowData))
+	buf.appendUint16(buffLen)
+
+	var i uint16
+	for i = 0; i < buffLen; i++ {
+		if b.RowData[i] != nil {
+			buf.appendUint32(uint32(len(b.RowData[i])))
+			buf.appendBytes(b.RowData[i])
+		} else {
+			buf.appendInt32(-1)
+		}
+	}
+
+	return buf.bytes()
+}
+
 func (b *BEDataRowMsg) String() string {
 	return fmt.Sprintf("DataRow: %d column(s)", len(b.RowData))
 }

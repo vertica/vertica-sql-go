@@ -701,12 +701,11 @@ func TestHangAfterError(t *testing.T) {
 }
 
 func TestIssue43_EnableResultCache(t *testing.T) {
-
 	connDB := openConnection(t)
 	defer closeConnection(t, connDB)
 
 	vCtx := NewVerticaContext(context.Background())
-	vCtx.SetInMemoryResultRowLimit(5)
+	vCtx.SetInMemoryResultRowLimit(1)
 
 	rows, _ := connDB.QueryContext(vCtx, "SELECT * FROM v_monitor.cpu_usage")
 	defer rows.Close()

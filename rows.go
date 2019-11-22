@@ -56,6 +56,7 @@ type rows struct {
 	tzOffset      string
 	inMemRowLimit int
 	resultCache   *os.File
+	cachingFailed bool
 }
 
 var paddingString = "000000"
@@ -146,22 +147,26 @@ func parseTimestampTZColumn(fullString string) (driver.Value, error) {
 	return result, err
 }
 
-func (r *rows) addRow(resultData *msgs.BEDataRowMsg) {
-	if r.inMemRowLimit == 0 || len(r.resultData) < r.inMemRowLimit {
-		r.resultData = append(r.resultData, resultData)
-	} else {
-		if r.resultCache == nil {
-			var err error
-			r.resultCache, err = ioutil.TempFile("", "vertica-sql-go.*.dat")
-			fmt.Fprintf(os.Stdout, "opening file %v\n", r.resultCache.Name())
+func (r *rows) addRow(rowData *msgs.BEDataRowMsg) {
+	if r.resultCache != nil {
+		r.resultCache.Write(rowData.RevertToBytes())
+		return
+	}
 
-			if err != nil {
-				r.resultData = append(r.resultData, resultData)
-			}
+	if r.inMemRowLimit > 0 && !r.cachingFailed && len(r.resultData) == r.inMemRowLimit {
+		var err error
+		r.resultCache, err = ioutil.TempFile("", ".vertica-sql-go.*.dat")
+
+		if err != nil {
+			r.cachingFailed = true
+			r.resultData = append(r.resultData, rowData)
 		} else {
-			fmt.Fprintf(r.resultCache, "line here!\n")
+			r.resultCache.Write(rowData.RevertToBytes())
+			return
 		}
 	}
+
+	r.resultData = append(r.resultData, rowData)
 }
 
 func newRows(ctx context.Context, columnsDefsMsg *msgs.BERowDescMsg, tzOffset string) *rows {
@@ -171,6 +176,7 @@ func newRows(ctx context.Context, columnsDefsMsg *msgs.BERowDescMsg, tzOffset st
 		tzOffset:      tzOffset,
 		inMemRowLimit: 0,
 		resultCache:   nil,
+		cachingFailed: false,
 	}
 
 	if vCtx, ok := ctx.(VerticaContext); ok {
