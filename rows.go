@@ -36,7 +36,6 @@ import (
 	"context"
 	"database/sql/driver"
 	"encoding/hex"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -90,10 +89,6 @@ func (r *rows) Next(dest []driver.Value) error {
 		return io.EOF
 	}
 
-	if len(dest) != len(r.columnDefs.Columns) {
-		return fmt.Errorf("rows.Next(): dest len %d is not equal to column len %d", len(dest), len(r.columnDefs.Columns))
-	}
-
 	thisRow := r.resultData[r.readIndex]
 
 	for idx, colVal := range thisRow.RowData {
@@ -145,6 +140,15 @@ func parseTimestampTZColumn(fullString string) (driver.Value, error) {
 	}
 
 	return result, err
+}
+
+func (r *rows) finalize() {
+	if r.resultCache != nil {
+		name := r.resultCache.Name()
+		r.resultCache.Close()
+
+		r.resultCache, _ = os.OpenFile(name, os.O_RDONLY|os.O_EXCL, 0600)
+	}
 }
 
 func (r *rows) addRow(rowData *msgs.BEDataRowMsg) {

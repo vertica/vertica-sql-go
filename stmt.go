@@ -233,6 +233,7 @@ func (s *stmt) QueryContextRaw(ctx context.Context, args []driver.NamedValue) (*
 		case *msgs.BEEmptyQueryResponseMsg:
 			return newEmptyRows(), nil
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg:
+			rows.finalize()
 			return rows, nil
 		case *msgs.BEInitSTDINLoadMsg:
 			s.copySTDIN(ctx)
@@ -424,6 +425,7 @@ func (s *stmt) collectResults(ctx context.Context) (*rows, error) {
 		case *msgs.BEBindCompleteMsg, *msgs.BECmdDescriptionMsg:
 			continue
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg, *msgs.BECmdCompleteMsg:
+			rows.finalize()
 			return rows, nil
 		case *msgs.BEInitSTDINLoadMsg:
 			s.copySTDIN(ctx)
