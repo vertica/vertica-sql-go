@@ -70,6 +70,7 @@ type connection struct {
 	transactionState byte
 	authState        int32
 	usePreparedStmts bool
+	scratch          [512]byte
 	sessionID        string
 	serverTZOffset   string
 	sessMutex        sync.Mutex
@@ -180,40 +181,44 @@ func newConnection(connString string) (*connection, error) {
 }
 
 func (v *connection) recvMessage() (msgs.BackEndMsg, error) {
-	msgHeader := make([]byte, 5)
+	msgHeader := v.scratch[:5]
 
-	for {
-		var err error
+	var err error
 
-		if err = v.readAll(msgHeader); err != nil {
-			return nil, err
-		}
-
-		msgSize := int(binary.BigEndian.Uint32(msgHeader[1:]) - 4)
-
-		msgBytes := make([]byte, msgSize)
-
-		if msgSize > 0 {
-			if err = v.readAll(msgBytes); err != nil {
-				return nil, err
-			}
-		}
-
-		bem, err := msgs.CreateBackEndMsg(msgHeader[0], msgBytes)
-
-		if err != nil {
-			return nil, err
-		}
-
-		// Print the message to stdout (for debugging purposes)
-		if _, drm := bem.(*msgs.BEDataRowMsg); !drm {
-			connectionLogger.Debug("<- " + bem.String())
-		} else {
-			connectionLogger.Trace("<- " + bem.String())
-		}
-
-		return bem, nil
+	if err = v.readAll(msgHeader); err != nil {
+		return nil, err
 	}
+
+	msgSize := int(binary.BigEndian.Uint32(msgHeader[1:]) - 4)
+
+	msgBytes := v.scratch[5:]
+
+	var y []byte
+	if msgSize > 0 {
+		if msgSize <= len(msgBytes) {
+			y = msgBytes[:msgSize]
+		} else {
+			y = make([]byte, msgSize)
+		}
+		if err = v.readAll(y); err != nil {
+			return nil, err
+		}
+	}
+
+	bem, err := msgs.CreateBackEndMsg(msgHeader[0], y)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Print the message to stdout (for debugging purposes)
+	if _, drm := bem.(*msgs.BEDataRowMsg); !drm {
+		connectionLogger.Debug("<- " + bem.String())
+	} else {
+		connectionLogger.Trace("<- " + bem.String())
+	}
+
+	return bem, nil
 }
 
 func (v *connection) sendMessage(msg msgs.FrontEndMsg) error {
@@ -226,7 +231,7 @@ func (v *connection) sendMessage(msg msgs.FrontEndMsg) error {
 	}
 
 	if result == nil {
-		sizeBytes := make([]byte, 4)
+		sizeBytes := v.scratch[:4]
 		binary.BigEndian.PutUint32(sizeBytes, uint32(len(msgBytes)+4))
 
 		_, result = v.conn.Write(sizeBytes)
@@ -393,7 +398,7 @@ func (v *connection) readAll(buf []byte) error {
 func (v *connection) initializeSSL(sslFlag string) error {
 	v.sendMessage(&msgs.FESSLMsg{})
 
-	buf := make([]byte, 1)
+	buf := v.scratch[:1]
 
 	err := v.readAll(buf)
 
