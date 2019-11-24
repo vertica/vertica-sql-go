@@ -58,7 +58,10 @@ type rows struct {
 	cachingFailed bool
 }
 
-var paddingString = "000000"
+var (
+	paddingString        = "000000"
+	defaultRowBufferSize = 256
+)
 
 // Columns returns the names of all of the columns
 // Interface: driver.Rows
@@ -96,13 +99,10 @@ func (r *rows) Next(dest []driver.Value) error {
 			dest[idx] = nil
 			continue
 		}
+
 		switch r.columnDefs.Columns[idx].DataTypeOID {
 		case common.ColTypeBoolean: // to boolean
-			if colVal[0] == 't' {
-				dest[idx] = true
-			} else {
-				dest[idx] = false
-			}
+			dest[idx] = colVal[0] == 't'
 		case common.ColTypeInt64: // to integer
 			dest[idx], _ = strconv.Atoi(string(colVal))
 		case common.ColTypeVarChar, common.ColTypeLongVarChar, common.ColTypeChar, common.ColTypeUUID: // stays string, convert char to string
@@ -174,17 +174,22 @@ func (r *rows) addRow(rowData *msgs.BEDataRowMsg) {
 }
 
 func newRows(ctx context.Context, columnsDefsMsg *msgs.BERowDescMsg, tzOffset string) *rows {
-	res := &rows{
-		columnDefs:    columnsDefsMsg,
-		resultData:    make([]*msgs.BEDataRowMsg, 0, 128),
-		tzOffset:      tzOffset,
-		inMemRowLimit: 0,
-		resultCache:   nil,
-		cachingFailed: false,
-	}
+
+	rowBufferSize := defaultRowBufferSize
+	inMemRowLimit := 0
 
 	if vCtx, ok := ctx.(VerticaContext); ok {
-		res.inMemRowLimit = vCtx.GetInMemoryResultRowLimit()
+		rowBufferSize = vCtx.GetInMemoryResultRowLimit()
+		inMemRowLimit = rowBufferSize
+	}
+
+	res := &rows{
+		columnDefs:    columnsDefsMsg,
+		resultData:    make([]*msgs.BEDataRowMsg, 0, rowBufferSize),
+		tzOffset:      tzOffset,
+		inMemRowLimit: inMemRowLimit,
+		resultCache:   nil,
+		cachingFailed: false,
 	}
 
 	return res
