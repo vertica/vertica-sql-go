@@ -721,8 +721,28 @@ func TestEnableResultCache(t *testing.T) {
 	vCtx := NewVerticaContext(context.Background())
 	vCtx.SetInMemoryResultRowLimit(1)
 
-	rows, _ := connDB.QueryContext(vCtx, "SELECT * FROM result_cache_test")
+	rows, _ := connDB.QueryContext(vCtx, "SELECT a, b, c, d, e FROM result_cache_test ORDER BY a")
 	defer rows.Close()
+
+	var a int
+	var b string
+	var c bool
+	var d float64
+	var e int
+	var count int
+
+	for rows.Next() {
+		count++
+		assertNoErr(t, rows.Scan(&a, &b, &c, &d, &e))
+		assertEqual(t, a, count)
+		assertEqual(t, b, "dog")
+		assertEqual(t, c, true)
+		assertEqual(t, d, 3.14159)
+		assertEqual(t, e, 456)
+	}
+
+	assertNoNext(t, rows)
+	assertEqual(t, count, 42)
 }
 
 var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
