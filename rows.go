@@ -35,6 +35,7 @@ package vertigo
 import (
 	"context"
 	"database/sql/driver"
+	"encoding/binary"
 	"encoding/hex"
 	"io"
 	"io/ioutil"
@@ -85,11 +86,43 @@ func (r *rows) Close() error {
 	return nil
 }
 
-// Next docs
-// Interface: driver.Rows
+// TODO: implement
+func (r *rows) reloadFromCache() bool {
+	hadData := false
+
+	r.readIndex = 0
+	sizeBuf := make([]byte, 4)
+
+	if _, err := r.resultCache.Read(sizeBuf); err != nil {
+		return false
+	}
+
+	rowDataSize := binary.LittleEndian.Uint32(sizeBuf)
+
+	// TODO: inefficient
+	rowBuf := make([]byte, rowDataSize)
+	if _, err := r.resultCache.Read(rowBuf); err != nil {
+		return false
+	}
+
+	msgBuffer :=
+
+	hadData = true
+
+	msg := msgs.BEDataRowMsg.CreateFromMsgBody()
+
+	return hadData
+}
+
 func (r *rows) Next(dest []driver.Value) error {
 	if r.readIndex == len(r.resultData) {
-		return io.EOF
+		if r.resultCache != nil {
+			if !r.reloadFromCache() {
+				return io.EOF
+			}
+		} else {
+			return io.EOF
+		}
 	}
 
 	thisRow := r.resultData[r.readIndex]
@@ -165,7 +198,12 @@ func (r *rows) addRow(rowData *msgs.BEDataRowMsg) {
 			r.cachingFailed = true
 			r.resultData = append(r.resultData, rowData)
 		} else {
-			r.resultCache.Write(rowData.RevertToBytes())
+			// TODO: slow.. fix
+			b := rowData.RevertToBytes()
+			sizeBuf := make([]byte, 4)
+			binary.LittleEndian.PutUint32(sizeBuf, uint32(len(b)))
+			r.resultCache.Write(sizeBuf)
+			r.resultCache.Write(b)
 			return
 		}
 	}
