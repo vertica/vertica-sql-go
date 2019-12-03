@@ -87,29 +87,47 @@ func (r *rows) Close() error {
 }
 
 // TODO: implement
+// Returns true if there was any data remaining to be loaded.
 func (r *rows) reloadFromCache() bool {
 	hadData := false
 
 	r.readIndex = 0
-	sizeBuf := make([]byte, 4)
+	indexCount := 0
 
-	if _, err := r.resultCache.Read(sizeBuf); err != nil {
-		return false
+	for true {
+		sizeBuf := make([]byte, 4)
+
+		if _, err := r.resultCache.Read(sizeBuf); err != nil {
+			if err == io.EOF {
+				r.resultData = r.resultData[0:r.readIndex]
+				return true
+			}
+		}
+
+		rowDataSize := binary.LittleEndian.Uint32(sizeBuf)
+
+		// TODO: REALLY inefficient
+		rowBuf := make([]byte, rowDataSize)
+		if _, err := r.resultCache.Read(rowBuf); err != nil {
+			return false
+		}
+
+		msgBuf := msgs.NewMsgBufferFromBytes(rowBuf)
+
+		drm := &msgs.BEDataRowMsg{}
+
+		msg, _ := drm.CreateFromMsgBody(msgBuf)
+
+		r.resultData[indexCount] = msg.(*msgs.BEDataRowMsg)
+		indexCount++
+
+		hadData = true
+
+		// If we've reached the original capacity of the slice, we're done.
+		if indexCount == len(r.resultData) {
+			break
+		}
 	}
-
-	rowDataSize := binary.LittleEndian.Uint32(sizeBuf)
-
-	// TODO: inefficient
-	rowBuf := make([]byte, rowDataSize)
-	if _, err := r.resultCache.Read(rowBuf); err != nil {
-		return false
-	}
-
-	msgBuffer :=
-
-	hadData = true
-
-	msg := msgs.BEDataRowMsg.CreateFromMsgBody()
 
 	return hadData
 }

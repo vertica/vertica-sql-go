@@ -48,7 +48,7 @@ func newMsgBuffer() *msgBuffer {
 	return res
 }
 
-func newMsgBufferFromBytes(b []byte) *msgBuffer {
+func NewMsgBufferFromBytes(b []byte) *msgBuffer {
 	res := &msgBuffer{}
 	res.buf = new(bytes.Buffer)
 	res.buf.Write(b)
