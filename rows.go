@@ -37,6 +37,7 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -86,7 +87,6 @@ func (r *rows) Close() error {
 	return nil
 }
 
-// TODO: implement
 // Returns true if there was any data remaining to be loaded.
 func (r *rows) reloadFromCache() bool {
 	hadData := false
@@ -99,8 +99,14 @@ func (r *rows) reloadFromCache() bool {
 
 		if _, err := r.resultCache.Read(sizeBuf); err != nil {
 			if err == io.EOF {
-				r.resultData = r.resultData[0:r.readIndex]
+				if indexCount == 0 {
+					return false
+				}
+				fmt.Printf("reach EOF reading.. setting result data to %d\n", indexCount)
+				r.resultData = r.resultData[0:indexCount]
 				return true
+			} else {
+				return false
 			}
 		}
 
@@ -202,9 +208,18 @@ func (r *rows) finalize() {
 	}
 }
 
+// TODO: slow.. fix
+func (r *rows) writeCachedRow(rowData *msgs.BEDataRowMsg) {
+	b := rowData.RevertToBytes()
+	sizeBuf := make([]byte, 4)
+	binary.LittleEndian.PutUint32(sizeBuf, uint32(len(b)))
+	r.resultCache.Write(sizeBuf)
+	r.resultCache.Write(b)
+}
+
 func (r *rows) addRow(rowData *msgs.BEDataRowMsg) {
 	if r.resultCache != nil {
-		r.resultCache.Write(rowData.RevertToBytes())
+		r.writeCachedRow(rowData)
 		return
 	}
 
@@ -216,12 +231,7 @@ func (r *rows) addRow(rowData *msgs.BEDataRowMsg) {
 			r.cachingFailed = true
 			r.resultData = append(r.resultData, rowData)
 		} else {
-			// TODO: slow.. fix
-			b := rowData.RevertToBytes()
-			sizeBuf := make([]byte, 4)
-			binary.LittleEndian.PutUint32(sizeBuf, uint32(len(b)))
-			r.resultCache.Write(sizeBuf)
-			r.resultCache.Write(b)
+			r.writeCachedRow(rowData)
 			return
 		}
 	}

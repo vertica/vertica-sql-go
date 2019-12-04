@@ -712,16 +712,10 @@ func TestHangAfterError(t *testing.T) {
 	assertNoNext(t, rows)
 }
 
-// Issue 43 : response batching / cursor / lazy queries
-// https://github.com/vertica/vertica-sql-go/issues/43
-func TestEnableResultCache(t *testing.T) {
-	connDB := openConnection(t, "test_enable_result_cache_pre")
-	defer closeConnection(t, connDB, "test_enable_result_cache_post")
+func testEnableResultCachePageSized(t *testing.T, connDB *sql.DB, ctx VerticaContext, pageSize int) {
+	assertNoErr(t, ctx.SetInMemoryResultRowLimit(pageSize))
 
-	vCtx := NewVerticaContext(context.Background())
-	vCtx.SetInMemoryResultRowLimit(1)
-
-	rows, _ := connDB.QueryContext(vCtx, "SELECT a, b, c, d, e FROM result_cache_test ORDER BY a")
+	rows, _ := connDB.QueryContext(ctx, "SELECT a, b, c, d, e FROM result_cache_test ORDER BY a")
 	defer rows.Close()
 
 	var a int
@@ -743,6 +737,20 @@ func TestEnableResultCache(t *testing.T) {
 
 	assertNoNext(t, rows)
 	assertEqual(t, count, 42)
+}
+
+// Issue 43 : response batching / cursor / lazy queries
+// https://github.com/vertica/vertica-sql-go/issues/43
+func TestEnableResultCache(t *testing.T) {
+	connDB := openConnection(t, "test_enable_result_cache_pre")
+	defer closeConnection(t, connDB, "test_enable_result_cache_post")
+
+	vCtx := NewVerticaContext(context.Background())
+
+	testEnableResultCachePageSized(t, connDB, vCtx, 1)
+	testEnableResultCachePageSized(t, connDB, vCtx, 5)
+	testEnableResultCachePageSized(t, connDB, vCtx, 49)
+	testEnableResultCachePageSized(t, connDB, vCtx, 0)
 }
 
 var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
