@@ -83,13 +83,13 @@ func newTransaction(ctx context.Context, c *connection, opts driver.TxOptions) (
 
 	switch sql.IsolationLevel(opts.Isolation) {
 	case sql.LevelReadUncommitted:
-		queryStr += " READ UNCOMMITTED"
+		queryStr += " ISOLATION LEVEL READ UNCOMMITTED"
 	case sql.LevelReadCommitted:
-		queryStr += " READ COMMITTED"
+		queryStr += " ISOLATION LEVEL READ COMMITTED"
 	case sql.LevelSerializable:
-		queryStr += " SERIALIZABLE"
+		queryStr += " ISOLATION LEVEL SERIALIZABLE"
 	case sql.LevelRepeatableRead:
-		queryStr += " REPEATABLE READ"
+		queryStr += " ISOLATION LEVEL REPEATABLE READ"
 	case sql.LevelDefault:
 		break
 	default:
