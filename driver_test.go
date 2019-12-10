@@ -310,6 +310,7 @@ func TestTransaction(t *testing.T) {
 	assertNoErr(t, err)
 	assertNoErr(t, tx.Commit())
 
+	opts.Isolation = sql.LevelReadCommitted
 	tx, err = connDB.BeginTx(ctx, opts)
 	assertNoErr(t, err)
 	assertNoErr(t, tx.Rollback())
