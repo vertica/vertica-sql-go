@@ -40,7 +40,6 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"net"
 	"net/url"
 	"os"
@@ -68,13 +67,11 @@ type connection struct {
 	backendPID       uint32
 	cancelKey        uint32
 	transactionState byte
-	authState        int32
 	usePreparedStmts bool
 	scratch          [512]byte
 	sessionID        string
 	serverTZOffset   string
 	sessMutex        sync.Mutex
-	inputStream      io.Reader
 }
 
 // Begin - Begin starts and returns a new transaction. (DEPRECATED)
