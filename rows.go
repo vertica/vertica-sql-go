@@ -58,6 +58,7 @@ type rows struct {
 	inMemRowLimit int
 	resultCache   *os.File
 	cachingFailed bool
+	scratch       [512]byte
 }
 
 var (
@@ -95,7 +96,7 @@ func (r *rows) reloadFromCache() bool {
 	indexCount := 0
 
 	for true {
-		sizeBuf := make([]byte, 4)
+		sizeBuf := r.scratch[:4]
 
 		if _, err := r.resultCache.Read(sizeBuf); err != nil {
 			if err == io.EOF {
@@ -112,8 +113,13 @@ func (r *rows) reloadFromCache() bool {
 
 		rowDataSize := binary.LittleEndian.Uint32(sizeBuf)
 
-		// TODO: REALLY inefficient
-		rowBuf := make([]byte, rowDataSize)
+		var rowBuf []byte
+		rowBytes := r.scratch[4:]
+		if rowDataSize <= uint32(len(rowBytes)) {
+			rowBuf = rowBytes[:rowDataSize]
+		} else {
+			rowBuf = make([]byte, rowDataSize)
+		}
 		if _, err := r.resultCache.Read(rowBuf); err != nil {
 			return false
 		}
@@ -208,10 +214,9 @@ func (r *rows) finalize() {
 	}
 }
 
-// TODO: slow.. fix
 func (r *rows) writeCachedRow(rowData *msgs.BEDataRowMsg) {
 	b := rowData.RevertToBytes()
-	sizeBuf := make([]byte, 4)
+	sizeBuf := r.scratch[:4]
 	binary.LittleEndian.PutUint32(sizeBuf, uint32(len(b)))
 	r.resultCache.Write(sizeBuf)
 	r.resultCache.Write(b)
