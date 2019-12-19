@@ -33,6 +33,7 @@ package vertigo
 // THE SOFTWARE.
 
 import (
+	"bufio"
 	"context"
 	"database/sql/driver"
 	"encoding/binary"
@@ -57,6 +58,7 @@ type rows struct {
 	tzOffset      string
 	inMemRowLimit int
 	resultCache   *os.File
+	readWriteBuf  *bufio.ReadWriter
 	cachingFailed bool
 	scratch       [512]byte
 }
@@ -81,6 +83,7 @@ func (r *rows) Columns() []string {
 func (r *rows) Close() error {
 	if r.resultCache != nil {
 		name := r.resultCache.Name()
+		r.readWriteBuf.Flush()
 		r.resultCache.Close()
 		return os.Remove(name)
 	}
@@ -98,7 +101,7 @@ func (r *rows) reloadFromCache() bool {
 	for true {
 		sizeBuf := r.scratch[:4]
 
-		if _, err := r.resultCache.Read(sizeBuf); err != nil {
+		if _, err := io.ReadFull(r.readWriteBuf, sizeBuf); err != nil {
 			if err == io.EOF {
 				if indexCount == 0 {
 					return false
@@ -120,7 +123,7 @@ func (r *rows) reloadFromCache() bool {
 		} else {
 			rowBuf = make([]byte, rowDataSize)
 		}
-		if _, err := r.resultCache.Read(rowBuf); err != nil {
+		if _, err := io.ReadFull(r.readWriteBuf, rowBuf); err != nil {
 			return false
 		}
 
@@ -208,9 +211,11 @@ func parseTimestampTZColumn(fullString string) (driver.Value, error) {
 func (r *rows) finalize() {
 	if r.resultCache != nil {
 		name := r.resultCache.Name()
+		r.readWriteBuf.Flush()
 		r.resultCache.Close()
 
 		r.resultCache, _ = os.OpenFile(name, os.O_RDONLY|os.O_EXCL, 0600)
+		r.readWriteBuf = bufio.NewReadWriter(bufio.NewReader(r.resultCache), bufio.NewWriter(r.resultCache))
 	}
 }
 
@@ -218,8 +223,8 @@ func (r *rows) writeCachedRow(rowData *msgs.BEDataRowMsg) {
 	b := rowData.RevertToBytes()
 	sizeBuf := r.scratch[:4]
 	binary.LittleEndian.PutUint32(sizeBuf, uint32(len(b)))
-	r.resultCache.Write(sizeBuf)
-	r.resultCache.Write(b)
+	r.readWriteBuf.Write(sizeBuf)
+	r.readWriteBuf.Write(b)
 }
 
 func (r *rows) addRow(rowData *msgs.BEDataRowMsg) {
@@ -231,6 +236,7 @@ func (r *rows) addRow(rowData *msgs.BEDataRowMsg) {
 	if r.inMemRowLimit > 0 && !r.cachingFailed && len(r.resultData) == r.inMemRowLimit {
 		var err error
 		r.resultCache, err = ioutil.TempFile("", ".vertica-sql-go.*.dat")
+		r.readWriteBuf = bufio.NewReadWriter(bufio.NewReader(r.resultCache), bufio.NewWriter(r.resultCache))
 
 		if err != nil {
 			r.cachingFailed = true
@@ -260,6 +266,7 @@ func newRows(ctx context.Context, columnsDefsMsg *msgs.BERowDescMsg, tzOffset st
 		tzOffset:      tzOffset,
 		inMemRowLimit: inMemRowLimit,
 		resultCache:   nil,
+		readWriteBuf:  nil,
 		cachingFailed: false,
 	}
 
