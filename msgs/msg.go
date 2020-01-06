@@ -64,7 +64,7 @@ func registerBackEndMsgType(msgType byte, bem BackEndMsg) {
 // CreateBackEndMsg docs
 func CreateBackEndMsg(msgType byte, body []byte) (BackEndMsg, error) {
 	if bem, ok := backEndMsgTypeMap[msgType]; ok {
-		buffer := newMsgBufferFromBytes(body)
+		buffer := NewMsgBufferFromBytes(body)
 		newMsg, err := bem.CreateFromMsgBody(buffer)
 
 		if err != nil {

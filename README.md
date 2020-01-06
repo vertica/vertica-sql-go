@@ -163,6 +163,33 @@ for _, columnName := range columnNames {
         // use the column name here.
 }
 ```
+### Paging in Data
+
+By default, the query results are cached in memory allowing for rapid iteration of result row content.
+This generally works well, but in the case of exceptionally large result sets, you could run out of memory.
+
+If such a query needs to be performed, it is recommended that you tell the driver that you wish to cache
+that data in a temporary file, so its results can be "paged in" as you iterate the results. The data is
+stored in a process-read-only file in the OS's temp directory.
+
+To enable result paging, simply create a VerticaContext and use it to perform your query.
+
+```go
+vCtx := NewVerticaContext(context.Background())
+
+// Only keep 50000 rows in memory at once.
+vCtx.SetInMemoryResultRowLimit(50000)
+
+rows, _ := connDB.QueryContext(
+    vCtx,
+    "SELECT a, b, c, d, e FROM result_cache_test ORDER BY a")
+
+defer rows.Close()
+
+// Use rows result as normal.
+```
+If you want to disable paging on the same context all together, you can simply set the row
+limit to 0 (the default).
 
 ### Performing a simple execute call
 

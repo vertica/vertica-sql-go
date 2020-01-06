@@ -48,7 +48,7 @@ func newMsgBuffer() *msgBuffer {
 	return res
 }
 
-func newMsgBufferFromBytes(b []byte) *msgBuffer {
+func NewMsgBufferFromBytes(b []byte) *msgBuffer {
 	res := &msgBuffer{}
 	res.buf = new(bytes.Buffer)
 	res.buf.Write(b)
@@ -59,6 +59,15 @@ func newMsgBufferFromBytes(b []byte) *msgBuffer {
 func (b *msgBuffer) appendUint32(i uint32) *msgBuffer {
 	buf := make([]byte, 4)
 	binary.BigEndian.PutUint32(buf, i)
+
+	b.buf.Write(buf)
+
+	return b
+}
+
+func (b *msgBuffer) appendInt32(i int32) *msgBuffer {
+	buf := make([]byte, 4)
+	binary.BigEndian.PutUint32(buf, uint32(i))
 
 	b.buf.Write(buf)
 

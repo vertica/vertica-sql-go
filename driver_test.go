@@ -477,6 +477,8 @@ func TestValueTypes(t *testing.T) {
 	assertNoErr(t, rows.Close())
 }
 
+// Issue 17 : Reusing prepared statements throws runtime errors
+// https://github.com/vertica/vertica-sql-go/issues/17
 func TestStmtReuseBug(t *testing.T) {
 	connDB := openConnection(t)
 	defer closeConnection(t, connDB)
@@ -509,6 +511,8 @@ func TestStmtReuseBug(t *testing.T) {
 	assertNoNext(t, rows)
 }
 
+// Issue 20 : No columns returned when query returns no rows
+// https://github.com/vertica/vertica-sql-go/issues/20
 func TestColumnsWithNoRows(t *testing.T) {
 	connDB := openConnection(t)
 	defer closeConnection(t, connDB)
@@ -536,6 +540,8 @@ type threadedQuery struct {
 	resultColumns []string
 }
 
+// Issue 22 : Possible issue with wrong rows returned from current stmt results
+// https://github.com/vertica/vertica-sql-go/issues/22
 func TestStmtOrderingInThreads(t *testing.T) {
 	connDB := openConnection(t, "test_stmt_ordering_threads_pre")
 	connDB.SetMaxOpenConns(1)
@@ -596,6 +602,8 @@ func TestStmtOrderingInThreads(t *testing.T) {
 
 }
 
+// Issue 9 : Does it support COPY FROM / COPY TO ?
+// https://github.com/vertica/vertica-sql-go/issues/9
 func TestSTDINCopy(t *testing.T) {
 	connDB := openConnection(t, "test_stdin_copy_pre")
 	defer closeConnection(t, connDB, "test_stdin_copy_post")
@@ -637,6 +645,8 @@ func TestSTDINCopy(t *testing.T) {
 	assertNoNext(t, rows)
 }
 
+// Issue 9 : Does it support COPY FROM / COPY TO ?
+// https://github.com/vertica/vertica-sql-go/issues/9
 func TestSTDINCopyWithStream(t *testing.T) {
 	connDB := openConnection(t, "test_stdin_copy_pre")
 	defer closeConnection(t, connDB, "test_stdin_copy_post")
@@ -653,7 +663,7 @@ func TestSTDINCopyWithStream(t *testing.T) {
 	_, err = connDB.ExecContext(vCtx, "COPY stdin_data FROM STDIN DELIMITER ','")
 	assertNoErr(t, err)
 
-	rows, err := connDB.QueryContext(ctx, "SELECT name,id FROM stdin_data as t(name,id) order by name")
+	rows, err := connDB.QueryContext(ctx, "SELECT name,id FROM stdin_data AS t(name,id) ORDER BY name")
 	assertNoErr(t, err)
 
 	defer rows.Close()
@@ -678,6 +688,8 @@ func TestSTDINCopyWithStream(t *testing.T) {
 	assertNoNext(t, rows)
 }
 
+// Issue 44 : error during parsing of prepared statement causes perpetual error state
+// https://github.com/vertica/vertica-sql-go/issues/44
 func TestHangAfterError(t *testing.T) {
 	connDB := openConnection(t)
 	defer closeConnection(t, connDB)
@@ -699,6 +711,47 @@ func TestHangAfterError(t *testing.T) {
 	assertNoErr(t, err)
 	assertNext(t, rows)
 	assertNoNext(t, rows)
+}
+
+func testEnableResultCachePageSized(t *testing.T, connDB *sql.DB, ctx VerticaContext, pageSize int) {
+	assertNoErr(t, ctx.SetInMemoryResultRowLimit(pageSize))
+
+	rows, _ := connDB.QueryContext(ctx, "SELECT a, b, c, d, e FROM result_cache_test ORDER BY a")
+	defer rows.Close()
+
+	var a int
+	var b string
+	var c bool
+	var d float64
+	var e int
+	var count int
+
+	for rows.Next() {
+		count++
+		assertNoErr(t, rows.Scan(&a, &b, &c, &d, &e))
+		assertEqual(t, a, count)
+		assertEqual(t, b, "dog")
+		assertEqual(t, c, true)
+		assertEqual(t, d, 3.14159)
+		assertEqual(t, e, 456)
+	}
+
+	assertNoNext(t, rows)
+	assertEqual(t, count, 42)
+}
+
+// Issue 43 : response batching / cursor / lazy queries
+// https://github.com/vertica/vertica-sql-go/issues/43
+func TestEnableResultCache(t *testing.T) {
+	connDB := openConnection(t, "test_enable_result_cache_pre")
+	defer closeConnection(t, connDB, "test_enable_result_cache_post")
+
+	vCtx := NewVerticaContext(context.Background())
+
+	testEnableResultCachePageSized(t, connDB, vCtx, 1)
+	testEnableResultCachePageSized(t, connDB, vCtx, 5)
+	testEnableResultCachePageSized(t, connDB, vCtx, 49)
+	testEnableResultCachePageSized(t, connDB, vCtx, 0)
 }
 
 var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")

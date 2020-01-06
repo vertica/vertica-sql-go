@@ -33,10 +33,14 @@ package vertigo
 // THE SOFTWARE.
 
 import (
+	"context"
 	"database/sql/driver"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -49,13 +53,17 @@ type rows struct {
 	columnDefs *msgs.BERowDescMsg
 	resultData []*msgs.BEDataRowMsg
 
-	readIndex  int
-	writeIndex int
-	tzOffset   string
+	readIndex     int
+	tzOffset      string
+	inMemRowLimit int
+	resultCache   *os.File
+	cachingFailed bool
 }
 
-var emptyRowSet *rows
-var paddingString = "000000"
+var (
+	paddingString        = "000000"
+	defaultRowBufferSize = 256
+)
 
 // Columns returns the names of all of the columns
 // Interface: driver.Rows
@@ -70,18 +78,75 @@ func (r *rows) Columns() []string {
 // Close closes the read cursor
 // Interface: driver.Rows
 func (r *rows) Close() error {
+	if r.resultCache != nil {
+		name := r.resultCache.Name()
+		r.resultCache.Close()
+		return os.Remove(name)
+	}
+
 	return nil
 }
 
-// Next docs
-// Interface: driver.Rows
-func (r *rows) Next(dest []driver.Value) error {
-	if r.readIndex == r.writeIndex {
-		return io.EOF
+// Returns true if there was any data remaining to be loaded.
+func (r *rows) reloadFromCache() bool {
+	hadData := false
+
+	r.readIndex = 0
+	indexCount := 0
+
+	for true {
+		sizeBuf := make([]byte, 4)
+
+		if _, err := r.resultCache.Read(sizeBuf); err != nil {
+			if err == io.EOF {
+				if indexCount == 0 {
+					return false
+				}
+				fmt.Printf("reach EOF reading.. setting result data to %d\n", indexCount)
+				r.resultData = r.resultData[0:indexCount]
+				return true
+			} else {
+				return false
+			}
+		}
+
+		rowDataSize := binary.LittleEndian.Uint32(sizeBuf)
+
+		// TODO: REALLY inefficient
+		rowBuf := make([]byte, rowDataSize)
+		if _, err := r.resultCache.Read(rowBuf); err != nil {
+			return false
+		}
+
+		msgBuf := msgs.NewMsgBufferFromBytes(rowBuf)
+
+		drm := &msgs.BEDataRowMsg{}
+
+		msg, _ := drm.CreateFromMsgBody(msgBuf)
+
+		r.resultData[indexCount] = msg.(*msgs.BEDataRowMsg)
+		indexCount++
+
+		hadData = true
+
+		// If we've reached the original capacity of the slice, we're done.
+		if indexCount == len(r.resultData) {
+			break
+		}
 	}
 
-	if len(dest) != len(r.columnDefs.Columns) {
-		return fmt.Errorf("rows.Next(): dest len %d is not equal to column len %d", len(dest), len(r.columnDefs.Columns))
+	return hadData
+}
+
+func (r *rows) Next(dest []driver.Value) error {
+	if r.readIndex == len(r.resultData) {
+		if r.resultCache != nil {
+			if !r.reloadFromCache() {
+				return io.EOF
+			}
+		} else {
+			return io.EOF
+		}
 	}
 
 	thisRow := r.resultData[r.readIndex]
@@ -91,13 +156,10 @@ func (r *rows) Next(dest []driver.Value) error {
 			dest[idx] = nil
 			continue
 		}
+
 		switch r.columnDefs.Columns[idx].DataTypeOID {
 		case common.ColTypeBoolean: // to boolean
-			if colVal[0] == 't' {
-				dest[idx] = true
-			} else {
-				dest[idx] = false
-			}
+			dest[idx] = colVal[0] == 't'
 		case common.ColTypeInt64: // to integer
 			dest[idx], _ = strconv.Atoi(string(colVal))
 		case common.ColTypeVarChar, common.ColTypeLongVarChar, common.ColTypeChar, common.ColTypeUUID: // stays string, convert char to string
@@ -137,33 +199,70 @@ func parseTimestampTZColumn(fullString string) (driver.Value, error) {
 	return result, err
 }
 
-func (r *rows) addRow(resultData *msgs.BEDataRowMsg) {
+func (r *rows) finalize() {
+	if r.resultCache != nil {
+		name := r.resultCache.Name()
+		r.resultCache.Close()
 
-	if r.writeIndex == cap(r.resultData) {
-		newSlice := make([]*msgs.BEDataRowMsg, 2*r.writeIndex)
-		copy(newSlice, r.resultData)
-		r.resultData = newSlice
-	} else {
-		r.resultData = r.resultData[0 : r.writeIndex+1]
+		r.resultCache, _ = os.OpenFile(name, os.O_RDONLY|os.O_EXCL, 0600)
 	}
-
-	r.resultData[r.writeIndex] = resultData
-
-	r.writeIndex++
 }
 
-func newRows(columnsDefsMsg *msgs.BERowDescMsg, tzOffset string) *rows {
+// TODO: slow.. fix
+func (r *rows) writeCachedRow(rowData *msgs.BEDataRowMsg) {
+	b := rowData.RevertToBytes()
+	sizeBuf := make([]byte, 4)
+	binary.LittleEndian.PutUint32(sizeBuf, uint32(len(b)))
+	r.resultCache.Write(sizeBuf)
+	r.resultCache.Write(b)
+}
+
+func (r *rows) addRow(rowData *msgs.BEDataRowMsg) {
+	if r.resultCache != nil {
+		r.writeCachedRow(rowData)
+		return
+	}
+
+	if r.inMemRowLimit > 0 && !r.cachingFailed && len(r.resultData) == r.inMemRowLimit {
+		var err error
+		r.resultCache, err = ioutil.TempFile("", ".vertica-sql-go.*.dat")
+
+		if err != nil {
+			r.cachingFailed = true
+			r.resultData = append(r.resultData, rowData)
+		} else {
+			r.writeCachedRow(rowData)
+			return
+		}
+	}
+
+	r.resultData = append(r.resultData, rowData)
+}
+
+func newRows(ctx context.Context, columnsDefsMsg *msgs.BERowDescMsg, tzOffset string) *rows {
+
+	rowBufferSize := defaultRowBufferSize
+	inMemRowLimit := 0
+
+	if vCtx, ok := ctx.(VerticaContext); ok {
+		rowBufferSize = vCtx.GetInMemoryResultRowLimit()
+		inMemRowLimit = rowBufferSize
+	}
+
 	res := &rows{
-		columnDefs: columnsDefsMsg,
-		resultData: make([]*msgs.BEDataRowMsg, 64),
-		tzOffset:   tzOffset,
+		columnDefs:    columnsDefsMsg,
+		resultData:    make([]*msgs.BEDataRowMsg, 0, rowBufferSize),
+		tzOffset:      tzOffset,
+		inMemRowLimit: inMemRowLimit,
+		resultCache:   nil,
+		cachingFailed: false,
 	}
 
 	return res
 }
 
-func init() {
+func newEmptyRows() *rows {
 	cdf := make([]*msgs.BERowDescColumnDef, 0)
 	be := &msgs.BERowDescMsg{Columns: cdf}
-	emptyRowSet = newRows(be, "")
+	return newRows(context.Background(), be, "")
 }

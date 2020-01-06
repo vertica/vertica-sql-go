@@ -195,44 +195,45 @@ func (s *stmt) QueryContextRaw(ctx context.Context, args []driver.NamedValue) (*
 	// If we have a prepared statement, go through bind/execute() phases instead.
 	if s.parseState == parseStateParsed {
 		if err = s.bindAndExecute(portalName, args); err != nil {
-			return emptyRowSet, err
+			return newEmptyRows(), err
 		}
 
 		return s.collectResults(ctx)
 	}
 
-	rows := emptyRowSet
+	rows := newEmptyRows()
 
 	// We aren't a prepared statement, manually interpolate and do as a simple query.
 	cmd, err = s.interpolate(args)
 
 	if err != nil {
-		return emptyRowSet, err
+		return rows, err
 	}
 
 	if err = s.conn.sendMessage(&msgs.FEQueryMsg{Query: cmd}); err != nil {
-		return emptyRowSet, err
+		return rows, err
 	}
 
 	for {
 		bMsg, err := s.conn.recvMessage()
 
 		if err != nil {
-			return emptyRowSet, err
+			return newEmptyRows(), err
 		}
 
 		switch msg := bMsg.(type) {
 		case *msgs.BEDataRowMsg:
 			rows.addRow(msg)
 		case *msgs.BERowDescMsg:
-			rows = newRows(msg, s.conn.serverTZOffset)
+			rows = newRows(ctx, msg, s.conn.serverTZOffset)
 		case *msgs.BECmdCompleteMsg:
 			break
 		case *msgs.BEErrorMsg:
-			return emptyRowSet, msg.ToErrorType()
+			return newEmptyRows(), msg.ToErrorType()
 		case *msgs.BEEmptyQueryResponseMsg:
-			return emptyRowSet, nil
+			return newEmptyRows(), nil
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg:
+			rows.finalize()
 			return rows, nil
 		case *msgs.BEInitSTDINLoadMsg:
 			s.copySTDIN(ctx)
@@ -398,17 +399,17 @@ func (s *stmt) bindAndExecute(portalName string, args []driver.NamedValue) error
 }
 
 func (s *stmt) collectResults(ctx context.Context) (*rows, error) {
-	rows := emptyRowSet
+	rows := newEmptyRows()
 
 	if s.lastRowDesc != nil {
-		rows = newRows(s.lastRowDesc, s.conn.serverTZOffset)
+		rows = newRows(ctx, s.lastRowDesc, s.conn.serverTZOffset)
 	}
 
 	for {
 		bMsg, err := s.conn.recvMessage()
 
 		if err != nil {
-			return emptyRowSet, err
+			return newEmptyRows(), err
 		}
 
 		switch msg := bMsg.(type) {
@@ -416,14 +417,15 @@ func (s *stmt) collectResults(ctx context.Context) (*rows, error) {
 			rows.addRow(msg)
 		case *msgs.BERowDescMsg:
 			s.lastRowDesc = msg
-			rows = newRows(s.lastRowDesc, s.conn.serverTZOffset)
+			rows = newRows(ctx, s.lastRowDesc, s.conn.serverTZOffset)
 		case *msgs.BEErrorMsg:
-			return emptyRowSet, msg.ToErrorType()
+			return newEmptyRows(), msg.ToErrorType()
 		case *msgs.BEEmptyQueryResponseMsg:
-			return emptyRowSet, nil
+			return newEmptyRows(), nil
 		case *msgs.BEBindCompleteMsg, *msgs.BECmdDescriptionMsg:
 			continue
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg, *msgs.BECmdCompleteMsg:
+			rows.finalize()
 			return rows, nil
 		case *msgs.BEInitSTDINLoadMsg:
 			s.copySTDIN(ctx)
