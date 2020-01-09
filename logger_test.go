@@ -1,4 +1,4 @@
-package logger
+package vertigo
 
 // Copyright (c) 2019 Micro Focus or one of its affiliates.
 //
@@ -33,33 +33,48 @@ package logger
 // THE SOFTWARE.
 
 import (
-	"fmt"
-	"os"
-	"time"
+	"testing"
+
+	"github.com/vertica/vertica-sql-go/logger"
 )
 
-type FileLogger struct {
-	fp *os.File
+type LogMessage struct {
+	Prefix string
+	Name string
+	Msg string
 }
-
-func NewFileLogger(filename string) (*FileLogger, error) {
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &FileLogger{fp: file}, nil
+type MyLogger struct {
+	LastMessage *LogMessage
 }
-
-func (l *FileLogger) Write(prefix string, name string, msg string) {
-	l.fp.Write([]byte(time.Now().Format(time.StampMicro)))
-	l.fp.Write([]byte(fmt.Sprintf(" %s %s: ", prefix, name)))
-	l.fp.Write([]byte(msg + "\n"))
+func (l *MyLogger) Write(prefix string, name string, msg string) {
+	l.LastMessage = &LogMessage{Prefix: prefix, Name: name, Msg: msg}
 }
+func (l MyLogger) Close() {}
 
-func (l *FileLogger) Close() {
-	if l.fp != nil {
-		l.fp.Close()
-	}
+func TestExternalLogging(t *testing.T) {
+	ml := &MyLogger{}
+
+	logger.SetLogger(ml)
+	logger.SetLogLevel(logger.TRACE)
+
+	log := logger.New("TestExternalLogging")
+
+	log.Debug("Basic logging message here")
+	assertEqual(t, ml.LastMessage.Prefix, "DEBUG")
+	assertEqual(t, ml.LastMessage.Name, "TestExternalLogging")
+	assertEqual(t, ml.LastMessage.Msg, "Basic logging message here")
+
+	log.Info("Basic logging message here with number %v", 1234)
+	assertEqual(t, ml.LastMessage.Prefix, "INFO")
+	assertEqual(t, ml.LastMessage.Name, "TestExternalLogging")
+	assertEqual(t, ml.LastMessage.Msg, "Basic logging message here with number 1234")
+
+	log.Warn("With a string and a number: %s, %d", "a string", 5678)
+	assertEqual(t, ml.LastMessage.Prefix, "WARN")
+	assertEqual(t, ml.LastMessage.Name, "TestExternalLogging")
+	assertEqual(t, ml.LastMessage.Msg, "With a string and a number: a string, 5678")
+
+	log.LineTrace()
+	assertEqual(t, ml.LastMessage.Prefix, "TRACE")
+	assertEqual(t, ml.LastMessage.Name, "TestExternalLogging")
 }
