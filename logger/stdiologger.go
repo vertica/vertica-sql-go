@@ -32,14 +32,20 @@ package logger
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-import "os"
+import (
+	"fmt"
+	"os"
+	"time"
+)
 
 type STDIOLogger struct {
 }
 
-func (l *STDIOLogger) write(logStr string) {
-	os.Stdout.Write([]byte(logStr))
+func (l *STDIOLogger) Write(prefix string, name string, msg string) {
+	os.Stdout.Write([]byte(time.Now().Format(time.StampMicro)))
+	os.Stdout.Write([]byte(fmt.Sprintf(" %s %s: ", prefix, name)))
+	os.Stdout.Write([]byte(msg + "\n"))
 }
 
-func (l *STDIOLogger) close() {
+func (l *STDIOLogger) Close() {
 }

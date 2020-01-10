@@ -36,7 +36,6 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"time"
 )
 
 // LogLevel is the enum type for the log levels.
@@ -54,12 +53,12 @@ const (
 
 // Backend defines the public interface that must be implemented by all logger backends
 type Backend interface {
-	write(logStr string)
-	close()
+	Write(prefix string, name string, msg string)
+	Close()
 }
 
 var (
-	prefixes         = []string{"TRACE", "DEBUG", "INFO ", "WARN ", "ERROR", "FATAL"}
+	prefixes         = []string{"TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"}
 	level            = WARN
 	logger   Backend = &STDIOLogger{}
 )
@@ -69,9 +68,7 @@ type Logger struct {
 }
 
 func (l *Logger) print(level LogLevel, format string, args ...interface{}) {
-	logger.write(time.Now().Format(time.StampMicro))
-	logger.write(fmt.Sprintf(" %s %s: ", prefixes[level], l.name))
-	logger.write(fmt.Sprintf(format+"\n", args...))
+	logger.Write(prefixes[level], l.name, fmt.Sprintf(format, args...))
 }
 
 func New(name string) *Logger {
@@ -133,7 +130,7 @@ func SetLogLevel(newLevel LogLevel) {
 
 func SetLogger(newLogger Backend) {
 	if logger != newLogger {
-		logger.close()
+		logger.Close()
 		logger = newLogger
 	}
 }
