@@ -38,7 +38,6 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 	"encoding/hex"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -106,7 +105,6 @@ func (r *rows) reloadFromCache() bool {
 				if indexCount == 0 {
 					return false
 				}
-				fmt.Printf("reach EOF reading.. setting result data to %d\n", indexCount)
 				r.resultData = r.resultData[0:indexCount]
 				return true
 			} else {

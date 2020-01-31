@@ -74,9 +74,9 @@ func (m *FEBindMsg) Flatten() ([]byte, byte) {
 			strVal = v
 		case bool:
 			if v {
-				strVal = "t"
+				strVal = "1"
 			} else {
-				strVal = "f"
+				strVal = "0"
 			}
 		case sql.NullBool, sql.NullFloat64, sql.NullInt64, sql.NullString:
 			buf.appendUint32(0xffffffff)
