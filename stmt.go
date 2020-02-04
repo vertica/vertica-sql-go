@@ -147,7 +147,6 @@ func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
 	namedArgs := make([]driver.NamedValue, len(args))
 	for idx, arg := range args {
 		namedArgs[idx] = driver.NamedValue{
-			Name:    "",
 			Ordinal: idx,
 			Value:   arg,
 		}
@@ -263,7 +262,7 @@ func (s *stmt) copySTDIN(ctx context.Context) {
 			break
 		}
 		if err != nil {
-			s.conn.sendMessage(&msgs.FELoadFailMsg{err.Error()})
+			s.conn.sendMessage(&msgs.FELoadFailMsg{Message: err.Error()})
 			break
 		}
 		s.conn.sendMessage(&msgs.FELoadDataMsg{Data: block, UsedBytes: bytesRead})
@@ -289,7 +288,7 @@ func (s *stmt) interpolate(args []driver.NamedValue) (string, error) {
 		case int64, float64:
 			replaceStr = fmt.Sprintf("%v", v)
 		case string:
-			replaceStr = fmt.Sprintf("'%s'", v)
+			replaceStr = fmt.Sprintf("'%s'", strings.ReplaceAll(v, "'", "''"))
 		case bool:
 			if v {
 				replaceStr = "true"
@@ -308,7 +307,7 @@ func (s *stmt) interpolate(args []driver.NamedValue) (string, error) {
 			replaceStr = "?unknown_type?"
 		}
 
-		result = strings.Replace(result, "?", replaceStr, -1)
+		result = strings.Replace(result, "?", replaceStr, 1)
 	}
 
 	return result, nil

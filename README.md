@@ -16,19 +16,17 @@ vertica-sql-go has been tested with Vertica 9.2.0+ and Go 1.11.2.
 
 * As this driver is still in alpha stage, we reserve the right to break APIs and change functionality until it has been stablilized.
 
-
 ## Installation
 
 Source code for vertica-sql-go can be found at:
 
-    https://github.com/vertica/vertica-sql-go
+https://github.com/vertica/vertica-sql-go
 
 Alternatively you can use the 'go get' variant to install the package into your local Go environment.
 
 ```sh
 go get github.com/vertica/vertica-sql-go
 ```
-
 
 ## Usage
 
@@ -61,21 +59,26 @@ The vertica-sql-go driver supports multiple log levels, as defined in the follow
 | 6               | NONE           | Disable all log messages |
 
 and they can be set programmatically by calling the logger global level itself
+
 ```Go
 logger.SetLogLevel(logger.DEBUG)
 ```
+
 or by setting the environment variable VERTICA_SQL_GO_LOG_LEVEL to one of the integer values in the table above. This must be done before the process using the driver has started as the global log level will be read from here on start-up.
 
 Example:
+
 ```bash
 export VERTICA_SQL_GO_LOG_LEVEL=3
 ```
+
 ### Setting the Log File
 
 By default, log messages are sent to stdout, but the vertica-sql-go driver can also output to a file in cases where stdout is not available.
 Simply set the environment variable VERTICA_SQL_GO_LOG_FILE to your desired output location.
 
 Example:
+
 ```bash
 export VERTICA_SQL_GO_LOG_FILE=/var/log/vertica-sql-go.log
 ``` 
@@ -85,11 +88,13 @@ export VERTICA_SQL_GO_LOG_FILE=/var/log/vertica-sql-go.log
 ```Go
 connDB, err := sql.Open("vertica", myDBConnectString)
 ```
+
 where *myDBConnectString* is of the form:
 
-```
+```Go
 vertica://(user):(password)@(host):(port)/(database)?(queryArgs)
 ```
+
 Currently supported query arguments are:
 
 | Query Argument | Description | Values |
@@ -137,7 +142,7 @@ With client interpolation enabled, the client library will create a new query st
 
 With client interpolation disabled (default), the client library will use the full server-side parse(), describe(), bind(), execute() cycle.
 
-### Reading query result rows.
+### Reading query result rows
 
 As outlined in the GoLang specs, reading the results of a query is done via a loop, bounded by a .next() iterator.
 
@@ -163,6 +168,7 @@ for _, columnName := range columnNames {
         // use the column name here.
 }
 ```
+
 ### Paging in Data
 
 By default, the query results are cached in memory allowing for rapid iteration of result row content.
@@ -188,6 +194,7 @@ defer rows.Close()
 
 // Use rows result as normal.
 ```
+
 If you want to disable paging on the same context all together, you can simply set the row
 limit to 0 (the default).
 
@@ -241,41 +248,47 @@ opts := &sql.TxOptions{
 // Begin the transaction.
 tx, err := connDB.BeginTx(ctx, opts)
 ```
+
 ```Go
 // You can either commit it.
 err = tx.Commit()
 ```
+
 ```Go
 // Or roll it back.
 err = tx.Rollback()
 ```
+
 The following transaction isolation levels are supported:
 
- * sql.LevelReadUncommitted <sup><b>&#8224;</b></sup>
- * sql.LevelReadCommitted
- * sql.LevelSerializable
- * sql.LevelRepeatableRead <sup><b>&#8224;</b></sup>
- * sql.LevelDefault
+* sql.LevelReadUncommitted <sup><b>&#8224;</b></sup>
+* sql.LevelReadCommitted
+* sql.LevelSerializable
+* sql.LevelRepeatableRead <sup><b>&#8224;</b></sup>
+* sql.LevelDefault
 
  The following transaction isolation levels are unsupported:
 
- * sql.LevelSnapshot
- * sql.LevelLinearizable
+* sql.LevelSnapshot
+* sql.LevelLinearizable
 
  <b>&#8224;</b> Although Vertica supports the grammars for these transaction isolation levels, they are internally promoted to stronger isolation levels.
 
 ## COPY modes Supported
 
 ### COPY FROM STDIN
+
 vertica-sql-go supports copying from stdin. This allows you to write a command-line tool that accepts stdin as an
 input and passes it to Vertica for processing. An example:
 
 ```go
 _, err = connDB.ExecContext(ctx, "COPY stdin_data FROM STDIN DELIMITER ','")
 ```
+
 This will process input from stdin until an EOF is reached.
 
 ### COPY FROM STDIN with alternate stream
+
 In your code, you may also supply a different io.Reader object (such as *File) from which to supply your data.
 Simply create a new VerticaContext, set the copy input stream, and provide this context to the execute call.
 An example:
@@ -362,7 +375,6 @@ func main() {
     os.Exit(0)
 }
 ```
-
 
 ## License
 
