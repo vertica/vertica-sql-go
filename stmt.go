@@ -40,6 +40,7 @@ import (
 	"math/rand"
 	"os"
 	"reflect"
+	"regexp"
 	"strings"
 	"time"
 
@@ -270,6 +271,26 @@ func (s *stmt) copySTDIN(ctx context.Context) {
 	s.conn.sendMessage(&msgs.FEFlushMsg{})
 }
 
+func (s *stmt) cleanQuotes(val string) string {
+	re := regexp.MustCompile(`'+`)
+	pairs := re.FindAllStringIndex(val, -1)
+	if pairs == nil {
+		return val
+	}
+	cleaned := strings.Builder{}
+	cleaned.Grow(len(val))
+	cleanedTo := 0
+	for _, matchPair := range pairs {
+		if (matchPair[1]-matchPair[0])%2 != 0 {
+			cleaned.WriteString(val[cleanedTo:matchPair[1]])
+			cleaned.WriteRune('\'')
+			cleanedTo = matchPair[1]
+		}
+	}
+	cleaned.WriteString(val[cleanedTo:])
+	return cleaned.String()
+}
+
 func (s *stmt) interpolate(args []driver.NamedValue) (string, error) {
 
 	numArgs := s.NumInput()
@@ -288,7 +309,7 @@ func (s *stmt) interpolate(args []driver.NamedValue) (string, error) {
 		case int64, float64:
 			replaceStr = fmt.Sprintf("%v", v)
 		case string:
-			replaceStr = fmt.Sprintf("'%s'", strings.ReplaceAll(v, "'", "''"))
+			replaceStr = fmt.Sprintf("'%s'", s.cleanQuotes(v))
 		case bool:
 			if v {
 				replaceStr = "true"

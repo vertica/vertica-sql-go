@@ -58,6 +58,12 @@ func TestInterpolate(t *testing.T) {
 			expected: "select * from something where value = 'it''s other''s'",
 			args:     []driver.NamedValue{{Value: "it's other's"}},
 		},
+		{
+			name:     "strings with already escaped quotes",
+			command:  "select * from something where value = ?",
+			expected: "select * from something where value = 'it''s other''s'",
+			args:     []driver.NamedValue{{Value: "it''s other''s"}},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -68,6 +74,50 @@ func TestInterpolate(t *testing.T) {
 			}
 			if err != nil {
 				t.Errorf("Received error from interpolate: %v", err)
+			}
+		})
+	}
+}
+
+func TestCleanQuotes(t *testing.T) {
+	var testCases = []struct {
+		name     string
+		val      string
+		expected string
+	}{
+		{
+			name:     "Already paired",
+			val:      "isn''t",
+			expected: "isn''t",
+		},
+		{
+			name:     "Unpaired at end",
+			val:      "pair it'''",
+			expected: "pair it''''",
+		},
+		{
+			name:     "Unpaired at start",
+			val:      "'pair it",
+			expected: "''pair it",
+		},
+		{
+			name:     "multiple unpaired",
+			val:      "isn't wasn't",
+			expected: "isn''t wasn''t",
+		},
+		{
+			name:     "simple fix",
+			val:      "isn't",
+			expected: "isn''t",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stmt := testStatement("")
+			result := stmt.cleanQuotes(tc.val)
+			if result != tc.expected {
+				t.Errorf("Expected result to be %s got %s", tc.expected, result)
 			}
 		})
 	}
