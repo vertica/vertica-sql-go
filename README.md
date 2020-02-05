@@ -142,6 +142,16 @@ With client interpolation enabled, the client library will create a new query st
 
 With client interpolation disabled (default), the client library will use the full server-side parse(), describe(), bind(), execute() cycle.
 
+#### Named Arguments
+
+```Go
+rows, err := connDB.QueryContext(ctx, "SELECT name FROM MyTable WHERE id=@id and something=@example", sql.Named("id", 21), sql.Named("example", "hello"))
+```
+
+Named arguments are emulated by the driver. They will be converted to positional arguments by the driver and the named arguments given later will be slotted
+into the required positions. This still allows server side prepared statements as `@id` and `@example` above will be replaced by `?` before being sent. If
+you use named arguments, all the arguments must be named. Do not mix positional and named together.
+
 ### Reading query result rows
 
 As outlined in the GoLang specs, reading the results of a query is done via a loop, bounded by a .next() iterator.
