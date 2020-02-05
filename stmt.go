@@ -40,6 +40,7 @@ import (
 	"math/rand"
 	"os"
 	"reflect"
+	"regexp"
 	"strings"
 	"time"
 
@@ -147,7 +148,6 @@ func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
 	namedArgs := make([]driver.NamedValue, len(args))
 	for idx, arg := range args {
 		namedArgs[idx] = driver.NamedValue{
-			Name:    "",
 			Ordinal: idx,
 			Value:   arg,
 		}
@@ -263,12 +263,32 @@ func (s *stmt) copySTDIN(ctx context.Context) {
 			break
 		}
 		if err != nil {
-			s.conn.sendMessage(&msgs.FELoadFailMsg{err.Error()})
+			s.conn.sendMessage(&msgs.FELoadFailMsg{Message: err.Error()})
 			break
 		}
 		s.conn.sendMessage(&msgs.FELoadDataMsg{Data: block, UsedBytes: bytesRead})
 	}
 	s.conn.sendMessage(&msgs.FEFlushMsg{})
+}
+
+func (s *stmt) cleanQuotes(val string) string {
+	re := regexp.MustCompile(`'+`)
+	pairs := re.FindAllStringIndex(val, -1)
+	if pairs == nil {
+		return val
+	}
+	cleaned := strings.Builder{}
+	cleaned.Grow(len(val))
+	cleanedTo := 0
+	for _, matchPair := range pairs {
+		if (matchPair[1]-matchPair[0])%2 != 0 {
+			cleaned.WriteString(val[cleanedTo:matchPair[1]])
+			cleaned.WriteRune('\'')
+			cleanedTo = matchPair[1]
+		}
+	}
+	cleaned.WriteString(val[cleanedTo:])
+	return cleaned.String()
 }
 
 func (s *stmt) interpolate(args []driver.NamedValue) (string, error) {
@@ -289,7 +309,7 @@ func (s *stmt) interpolate(args []driver.NamedValue) (string, error) {
 		case int64, float64:
 			replaceStr = fmt.Sprintf("%v", v)
 		case string:
-			replaceStr = fmt.Sprintf("'%s'", v)
+			replaceStr = fmt.Sprintf("'%s'", s.cleanQuotes(v))
 		case bool:
 			if v {
 				replaceStr = "true"
@@ -308,7 +328,7 @@ func (s *stmt) interpolate(args []driver.NamedValue) (string, error) {
 			replaceStr = "?unknown_type?"
 		}
 
-		result = strings.Replace(result, "?", replaceStr, -1)
+		result = strings.Replace(result, "?", replaceStr, 1)
 	}
 
 	return result, nil
