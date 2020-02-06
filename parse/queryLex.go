@@ -55,7 +55,7 @@ type Lexer struct {
 	output       strings.Builder
 }
 
-// LexOption is a function that sets a prefernce on the lexer
+// LexOption is a function that sets a preference on the lexer
 type LexOption func(*Lexer)
 
 // WithPositionalSubstitution sets the optional positional substitution callback
@@ -202,7 +202,7 @@ func lexNamedParam(l *Lexer) stateFunc {
 	l.start = l.pos
 	// advance through the name
 	l.consumeToSpace()
-	if !l.done() {
+	if !l.done() || strings.HasSuffix(l.input[l.start:l.pos], "\n") {
 		l.backup() // move back before the whitespace character
 	}
 	l.onNamed(l.input[l.start:l.pos])

@@ -177,3 +177,47 @@ func TestInjectNamedArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestNumInput(t *testing.T) {
+	var testCases = []struct {
+		name     string
+		query    string
+		expected int
+	}{
+		{
+			name:     "basic positional",
+			query:    "select * from table where a = ?",
+			expected: 1,
+		},
+		{
+			name:     "basic named",
+			query:    "select * from table where a = @name",
+			expected: 1,
+		},
+		{
+			name:     "reused named",
+			query:    "select * from table where a = @name and b = @name and c = @id",
+			expected: 2,
+		},
+		{
+			name: "positional character in comment",
+			query: `select * --test?
+			from table where a = 1`,
+			expected: 0,
+		},
+		{
+			name:     "positional character in string",
+			query:    "select * from test where a = 'test?'",
+			expected: 0,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stmt, _ := newStmt(nil, tc.query)
+			result := stmt.NumInput()
+			if result != tc.expected {
+				t.Errorf("Expected %d query inputs, got %d", tc.expected, result)
+			}
+		})
+	}
+}

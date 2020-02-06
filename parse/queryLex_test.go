@@ -99,6 +99,20 @@ func TestLexNamed(t *testing.T) {
 			a = ?
 			and b = ?`,
 		},
+		{
+			name: "named params with ending newline",
+			query: `select
+			* from table
+			where
+			a = @param1
+`,
+			expectedNamed: []string{"param1"},
+			expectedOutput: `select
+			* from table
+			where
+			a = ?
+`,
+		},
 	}
 	var encounteredNames nameCapture
 	for _, tc := range testCases {

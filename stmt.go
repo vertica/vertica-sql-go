@@ -69,6 +69,7 @@ type stmt struct {
 	preparedName string
 	parseState   parseState
 	namedArgPos  []string
+	posArgCnt    int
 	paramTypes   []common.ParameterType
 	lastRowDesc  *msgs.BERowDescMsg
 }
@@ -84,7 +85,11 @@ func newStmt(connection *connection, command string) (*stmt, error) {
 		preparedName: fmt.Sprintf("S%d%d%d", os.Getpid(), time.Now().Unix(), rand.Int31()),
 		parseState:   parseStateUnparsed,
 	}
-	s.command = parse.Lex(command, parse.WithNamedCallback(s.pushNamed))
+	argCounter := func() string {
+		s.posArgCnt++
+		return "?"
+	}
+	s.command = parse.Lex(command, parse.WithNamedCallback(s.pushNamed), parse.WithPositionalSubstitution(argCounter))
 	return s, nil
 }
 
@@ -130,9 +135,19 @@ func (s *stmt) Close() error {
 	return nil
 }
 
-// NumInput docs
+// NumInput is used by database/sql to sanity check the number of arguments given
+// before calling into the driver's query/exec functions. If named arguments are used
+// this will return the number of unique named parameters, otherwise it is the number
+// if ? placeholders.
 func (s *stmt) NumInput() int {
-	return strings.Count(s.command, "?")
+	if len(s.namedArgPos) > 0 {
+		uniqueArgs := make(map[string]bool)
+		for _, arg := range s.namedArgPos {
+			uniqueArgs[arg] = true
+		}
+		return len(uniqueArgs)
+	}
+	return s.posArgCnt
 }
 
 // convertToNamed takes an argument list of Value that come from the older Exec/Query functions
