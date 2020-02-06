@@ -20,11 +20,8 @@ import (
 )
 
 func testStatement(command string) *stmt {
-	return &stmt{
-		command:      command,
-		preparedName: "TestCommand",
-		parseState:   parseStateUnparsed,
-	}
+	stmt, _ := newStmt(nil, command)
+	return stmt
 }
 
 func TestInterpolate(t *testing.T) {

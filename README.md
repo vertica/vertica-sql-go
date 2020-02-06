@@ -150,7 +150,8 @@ rows, err := connDB.QueryContext(ctx, "SELECT name FROM MyTable WHERE id=@id and
 
 Named arguments are emulated by the driver. They will be converted to positional arguments by the driver and the named arguments given later will be slotted
 into the required positions. This still allows server side prepared statements as `@id` and `@example` above will be replaced by `?` before being sent. If
-you use named arguments, all the arguments must be named. Do not mix positional and named together.
+you use named arguments, all the arguments must be named. Do not mix positional and named together. All named arguments are normalized to upper case which means
+`@param`, `@PaRaM`, and `@PARAM` are treated as equivalent.
 
 ### Reading query result rows
 

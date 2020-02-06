@@ -62,26 +62,32 @@ func TestLexNamed(t *testing.T) {
 		{
 			name:           "with some named parameters",
 			query:          "select * from whatever where a = @first and b = @second and c = '@fooledYou'",
-			expectedNamed:  []string{"first", "second"},
+			expectedNamed:  []string{"FIRST", "SECOND"},
 			expectedOutput: "select * from whatever where a = ? and b = ? and c = '@fooledYou'",
+		},
+		{
+			name:           "with mixed case named parameters",
+			query:          "select * from whatever where a = @first and b = @fIrSt",
+			expectedNamed:  []string{"FIRST", "FIRST"},
+			expectedOutput: "select * from whatever where a = ? and b = ?",
 		},
 		{
 			name:           "with a pre-escaped string",
 			query:          "select * from whatever where a = @first and b = 'isn''t",
-			expectedNamed:  []string{"first"},
+			expectedNamed:  []string{"FIRST"},
 			expectedOutput: "select * from whatever where a = ? and b = 'isn''t",
 		},
 		{
 			name:           "do not choke on malformed query string",
 			query:          "select * from whatever where a = @first and b = 'isn'''t",
-			expectedNamed:  []string{"first"},
+			expectedNamed:  []string{"FIRST"},
 			expectedOutput: "select * from whatever where a = ? and b = 'isn'''t",
 		},
 		{
 			name: "with a comment",
 			query: `select --some select stuff
 			* from whatever where a = @param`,
-			expectedNamed: []string{"param"},
+			expectedNamed: []string{"PARAM"},
 			expectedOutput: `select --some select stuff
 			* from whatever where a = ?`,
 		},
@@ -92,7 +98,7 @@ func TestLexNamed(t *testing.T) {
 			where
 			a = @param1
 			and b = @param2`,
-			expectedNamed: []string{"param1", "param2"},
+			expectedNamed: []string{"PARAM1", "PARAM2"},
 			expectedOutput: `select
 			* from table
 			where
@@ -106,7 +112,7 @@ func TestLexNamed(t *testing.T) {
 			where
 			a = @param1
 `,
-			expectedNamed: []string{"param1"},
+			expectedNamed: []string{"PARAM1"},
 			expectedOutput: `select
 			* from table
 			where

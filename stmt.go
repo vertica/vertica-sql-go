@@ -173,14 +173,14 @@ func (s *stmt) injectNamedArgs(args []driver.NamedValue) ([]driver.NamedValue, e
 	symbols := make(map[string]driver.NamedValue, len(args))
 	for _, arg := range args {
 		if len(arg.Name) > 0 {
-			symbols[arg.Name] = arg
+			symbols[strings.ToUpper(arg.Name)] = arg
 			continue
 		}
 		namedVal, ok := arg.Value.(driver.NamedValue)
 		if !ok || len(namedVal.Name) == 0 {
 			return nil, errors.New("all parameters must have names when using named parameters")
 		}
-		symbols[namedVal.Name] = namedVal
+		symbols[strings.ToUpper(namedVal.Name)] = namedVal
 	}
 	realArgs := make([]driver.NamedValue, len(s.namedArgPos))
 	for pos, name := range s.namedArgPos {

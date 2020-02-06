@@ -205,7 +205,7 @@ func lexNamedParam(l *Lexer) stateFunc {
 	if !l.done() || strings.HasSuffix(l.input[l.start:l.pos], "\n") {
 		l.backup() // move back before the whitespace character
 	}
-	l.onNamed(l.input[l.start:l.pos])
+	l.onNamed(strings.ToUpper(l.input[l.start:l.pos]))
 	l.start = l.pos
 	l.output.WriteRune('?')
 	return lexQuery
