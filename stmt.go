@@ -35,6 +35,7 @@ package vertigo
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -47,6 +48,7 @@ import (
 	"github.com/vertica/vertica-sql-go/common"
 	"github.com/vertica/vertica-sql-go/logger"
 	"github.com/vertica/vertica-sql-go/msgs"
+	"github.com/vertica/vertica-sql-go/parse"
 )
 
 var (
@@ -66,6 +68,8 @@ type stmt struct {
 	command      string
 	preparedName string
 	parseState   parseState
+	namedArgPos  []string
+	posArgCnt    int
 	paramTypes   []common.ParameterType
 	lastRowDesc  *msgs.BERowDescMsg
 }
@@ -76,12 +80,21 @@ func newStmt(connection *connection, command string) (*stmt, error) {
 		return nil, fmt.Errorf("cannot create an empty statement")
 	}
 
-	return &stmt{
+	s := &stmt{
 		conn:         connection,
-		command:      command,
 		preparedName: fmt.Sprintf("S%d%d%d", os.Getpid(), time.Now().Unix(), rand.Int31()),
 		parseState:   parseStateUnparsed,
-	}, nil
+	}
+	argCounter := func() string {
+		s.posArgCnt++
+		return "?"
+	}
+	s.command = parse.Lex(command, parse.WithNamedCallback(s.pushNamed), parse.WithPositionalSubstitution(argCounter))
+	return s, nil
+}
+
+func (s *stmt) pushNamed(name string) {
+	s.namedArgPos = append(s.namedArgPos, name)
 }
 
 // Close closes this statement.
@@ -122,37 +135,70 @@ func (s *stmt) Close() error {
 	return nil
 }
 
-// NumInput docs
+// NumInput is used by database/sql to sanity check the number of arguments given
+// before calling into the driver's query/exec functions. If named arguments are used
+// this will return the number of unique named parameters, otherwise it is the number
+// if ? placeholders.
 func (s *stmt) NumInput() int {
-	return strings.Count(s.command, "?")
+	if len(s.namedArgPos) > 0 {
+		uniqueArgs := make(map[string]bool)
+		for _, arg := range s.namedArgPos {
+			uniqueArgs[arg] = true
+		}
+		return len(uniqueArgs)
+	}
+	return s.posArgCnt
 }
 
-// Exec docs
-func (s *stmt) Exec(args []driver.Value) (driver.Result, error) {
-
+// convertToNamed takes an argument list of Value that come from the older Exec/Query functions
+// and converts them to NamedValue to be forwarded to their Context equivalents.
+func (s *stmt) convertToNamed(args []driver.Value) []driver.NamedValue {
 	namedArgs := make([]driver.NamedValue, len(args))
 	for idx, arg := range args {
 		namedArgs[idx] = driver.NamedValue{
-			Name:    "",
 			Ordinal: idx,
 			Value:   arg,
 		}
 	}
-	return s.ExecContext(context.Background(), namedArgs)
+	return namedArgs
+}
+
+// injectNamedArgs takes a list of arguments, builds a symbol table of name => arg and then
+// fills a list of positional arguments based on the names from the args parameter
+// This will return an error if any of the given args lack a name
+func (s *stmt) injectNamedArgs(args []driver.NamedValue) ([]driver.NamedValue, error) {
+	if len(s.namedArgPos) == 0 {
+		return args, nil
+	}
+	symbols := make(map[string]driver.NamedValue, len(args))
+	for _, arg := range args {
+		if len(arg.Name) > 0 {
+			symbols[strings.ToUpper(arg.Name)] = arg
+			continue
+		}
+		namedVal, ok := arg.Value.(driver.NamedValue)
+		if !ok || len(namedVal.Name) == 0 {
+			return nil, errors.New("all parameters must have names when using named parameters")
+		}
+		symbols[strings.ToUpper(namedVal.Name)] = namedVal
+	}
+	realArgs := make([]driver.NamedValue, len(s.namedArgPos))
+	for pos, name := range s.namedArgPos {
+		realArgs[pos] = symbols[name]
+		realArgs[pos].Ordinal = pos
+	}
+	return realArgs, nil
+}
+
+// Exec docs
+func (s *stmt) Exec(args []driver.Value) (driver.Result, error) {
+	return s.ExecContext(context.Background(), s.convertToNamed(args))
 }
 
 // Query docs
 func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
 	stmtLogger.Debug("stmt.Query(): %s\n", s.command)
-
-	namedArgs := make([]driver.NamedValue, len(args))
-	for idx, arg := range args {
-		namedArgs[idx] = driver.NamedValue{
-			Ordinal: idx,
-			Value:   arg,
-		}
-	}
-	return s.QueryContext(context.Background(), namedArgs)
+	return s.QueryContext(context.Background(), s.convertToNamed(args))
 }
 
 // ExecContext docs
@@ -182,12 +228,17 @@ func (s *stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driv
 }
 
 // QueryContext docs
-func (s *stmt) QueryContextRaw(ctx context.Context, args []driver.NamedValue) (*rows, error) {
+func (s *stmt) QueryContextRaw(ctx context.Context, baseArgs []driver.NamedValue) (*rows, error) {
 	stmtLogger.Debug("stmt.QueryContextRaw(): %s", s.command)
 
 	var cmd string
 	var err error
 	var portalName string
+
+	args, err := s.injectNamedArgs(baseArgs)
+	if err != nil {
+		return newEmptyRows(), err
+	}
 
 	s.conn.lockSessionMutex()
 	defer s.conn.unlockSessionMutex()
@@ -291,6 +342,33 @@ func (s *stmt) cleanQuotes(val string) string {
 	return cleaned.String()
 }
 
+func (s *stmt) formatArg(arg driver.NamedValue) string {
+	var replaceStr string
+	switch v := arg.Value.(type) {
+	case int64, float64:
+		replaceStr = fmt.Sprintf("%v", v)
+	case string:
+		replaceStr = fmt.Sprintf("'%s'", s.cleanQuotes(v))
+	case bool:
+		if v {
+			replaceStr = "true"
+		} else {
+			replaceStr = "false"
+		}
+	case time.Time:
+		replaceStr = fmt.Sprintf("%02d-%02d-%02d %02d:%02d:%02d",
+			v.Year(),
+			v.Month(),
+			v.Day(),
+			v.Hour(),
+			v.Minute(),
+			v.Second())
+	default:
+		replaceStr = "?unknown_type?"
+	}
+	return replaceStr
+}
+
 func (s *stmt) interpolate(args []driver.NamedValue) (string, error) {
 
 	numArgs := s.NumInput()
@@ -299,38 +377,14 @@ func (s *stmt) interpolate(args []driver.NamedValue) (string, error) {
 		return s.command, nil
 	}
 
-	result := s.command
-
-	var replaceStr string
-
-	for _, arg := range args {
-
-		switch v := arg.Value.(type) {
-		case int64, float64:
-			replaceStr = fmt.Sprintf("%v", v)
-		case string:
-			replaceStr = fmt.Sprintf("'%s'", s.cleanQuotes(v))
-		case bool:
-			if v {
-				replaceStr = "true"
-			} else {
-				replaceStr = "false"
-			}
-		case time.Time:
-			replaceStr = fmt.Sprintf("%02d-%02d-%02d %02d:%02d:%02d",
-				v.Year(),
-				v.Month(),
-				v.Day(),
-				v.Hour(),
-				v.Minute(),
-				v.Second())
-		default:
-			replaceStr = "?unknown_type?"
-		}
-
-		result = strings.Replace(result, "?", replaceStr, 1)
+	curArg := 0
+	argSwapper := func() string {
+		arg := s.formatArg(args[curArg])
+		curArg++
+		return arg
 	}
 
+	result := parse.Lex(s.command, parse.WithPositionalSubstitution(argSwapper))
 	return result, nil
 }
 

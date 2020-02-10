@@ -196,6 +196,32 @@ func TestBasicQuery(t *testing.T) {
 
 }
 
+func TestBasicNamedArgs(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+	rows, err := connDB.QueryContext(ctx, "SELECT DISTINCT(keyword) FROM v_catalog.standard_keywords WHERE reserved=@type LIMIT 10", sql.Named("type", "R"))
+	assertNoErr(t, err)
+	defer rows.Close()
+	for rows.Next() {
+		var keyword string
+		assertNoErr(t, rows.Scan(&keyword))
+	}
+}
+
+func TestPreparedNamedArgs(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+	stmt, err := connDB.PrepareContext(ctx, "SELECT DISTINCT(keyword) FROM v_catalog.standard_keywords WHERE reserved=@type LIMIT 10")
+	assertNoErr(t, err)
+	rows, err := stmt.QueryContext(ctx, sql.Named("type", "R"))
+	assertNoErr(t, err)
+	defer rows.Close()
+	for rows.Next() {
+		var keyword string
+		assertNoErr(t, rows.Scan(&keyword))
+	}
+}
+
 func TestBasicExec(t *testing.T) {
 	connDB := openConnection(t, "test_basic_exec_pre")
 	defer closeConnection(t, connDB, "test_basic_exec_post")

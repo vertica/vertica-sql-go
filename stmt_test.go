@@ -20,11 +20,8 @@ import (
 )
 
 func testStatement(command string) *stmt {
-	return &stmt{
-		command:      command,
-		preparedName: "TestCommand",
-		parseState:   parseStateUnparsed,
-	}
+	stmt, _ := newStmt(nil, command)
+	return stmt
 }
 
 func TestInterpolate(t *testing.T) {
@@ -63,6 +60,12 @@ func TestInterpolate(t *testing.T) {
 			command:  "select * from something where value = ?",
 			expected: "select * from something where value = 'it''s other''s'",
 			args:     []driver.NamedValue{{Value: "it''s other''s"}},
+		},
+		{
+			name:     "with a param looking rune in a string",
+			command:  "select * from something where value = ? and test = '?bad'",
+			expected: "select * from something where value = 'replace' and test = '?bad'",
+			args:     []driver.NamedValue{{Value: "replace"}},
 		},
 	}
 	for _, tc := range testCases {
@@ -118,6 +121,99 @@ func TestCleanQuotes(t *testing.T) {
 			result := stmt.cleanQuotes(tc.val)
 			if result != tc.expected {
 				t.Errorf("Expected result to be %s got %s", tc.expected, result)
+			}
+		})
+	}
+}
+
+func TestInjectNamedArgs(t *testing.T) {
+	var testCases = []struct {
+		name     string
+		query    string
+		args     []driver.NamedValue
+		expected []driver.NamedValue
+	}{
+		{
+			name:     "no named arguments",
+			query:    "select * from table where a=?",
+			args:     []driver.NamedValue{{Name: "", Value: "hello"}},
+			expected: []driver.NamedValue{{Name: "", Value: "hello"}},
+		},
+		{
+			name:     "multiple names",
+			query:    "select * from table where a=@first and b=@second",
+			args:     []driver.NamedValue{{Name: "first", Value: "hello"}, {Name: "second", Value: 123}},
+			expected: []driver.NamedValue{{Name: "first", Value: "hello"}, {Name: "second", Value: 123}},
+		},
+		{
+			name:     "reusing names",
+			query:    "select * from table where a=@id and other=@test and b=@id",
+			args:     []driver.NamedValue{{Name: "id", Value: 123}, {Name: "test", Value: 456}},
+			expected: []driver.NamedValue{{Name: "id", Value: 123}, {Name: "test", Value: 456}, {Name: "id", Value: 123}},
+		},
+		{
+			name:     "nested NamedValue from Query or Exec",
+			query:    "select * from table where a=@id and other=@test and b=@id",
+			args:     []driver.NamedValue{{Name: "id", Value: 123}, {Name: "", Value: driver.NamedValue{Name: "test", Value: 456}}},
+			expected: []driver.NamedValue{{Name: "id", Value: 123}, {Name: "test", Value: 456}, {Name: "id", Value: 123}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stmt, _ := newStmt(nil, tc.query)
+			result, _ := stmt.injectNamedArgs(tc.args)
+			for i, r := range result {
+				if r.Value != tc.expected[i].Value {
+					t.Errorf("Expected %v at pos %d but got %v", tc.expected[i].Value, i, r)
+				}
+				if r.Ordinal != i {
+					t.Errorf("Expected ordinal to be set as %d but got %d", i, r.Ordinal)
+				}
+			}
+		})
+	}
+}
+
+func TestNumInput(t *testing.T) {
+	var testCases = []struct {
+		name     string
+		query    string
+		expected int
+	}{
+		{
+			name:     "basic positional",
+			query:    "select * from table where a = ?",
+			expected: 1,
+		},
+		{
+			name:     "basic named",
+			query:    "select * from table where a = @name",
+			expected: 1,
+		},
+		{
+			name:     "reused named",
+			query:    "select * from table where a = @name and b = @name and c = @id",
+			expected: 2,
+		},
+		{
+			name: "positional character in comment",
+			query: `select * --test?
+			from table where a = 1`,
+			expected: 0,
+		},
+		{
+			name:     "positional character in string",
+			query:    "select * from test where a = 'test?'",
+			expected: 0,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stmt, _ := newStmt(nil, tc.query)
+			result := stmt.NumInput()
+			if result != tc.expected {
+				t.Errorf("Expected %d query inputs, got %d", tc.expected, result)
 			}
 		})
 	}
