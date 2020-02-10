@@ -786,6 +786,7 @@ func TestConnectionClosure(t *testing.T) {
 	const userQuery = "select 1 as test"
 
 	userDB, _ := sql.Open("vertica", otherConnectString)
+	defer userDB.Close()
 	rows, err := userDB.Query(userQuery)
 	assertNoErr(t, err)
 	rows.Close()
