@@ -780,6 +780,23 @@ func TestEnableResultCache(t *testing.T) {
 	testEnableResultCachePageSized(t, connDB, vCtx, 0)
 }
 
+func TestConnectionClosure(t *testing.T) {
+	adminDB := openConnection(t, "test_connection_closed_pre")
+	defer closeConnection(t, adminDB, "test_connection_closed_post")
+	const userQuery = "select 1 as test"
+
+	userDB, _ := sql.Open("vertica", otherConnectString)
+	rows, err := userDB.Query(userQuery)
+	assertNoErr(t, err)
+	rows.Close()
+	adminDB.Query("select close_user_sessions('TestGuy')")
+	_, err = userDB.Query(userQuery)
+	assertErr(t, err, "EOF")
+	rows, err = userDB.Query(userQuery)
+	assertNoErr(t, err)
+	rows.Close()
+}
+
 var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
 var verticaPassword = flag.String("password", os.Getenv("VERTICA_TEST_PASSWORD"), "Vertica password for this user")
 var verticaHostPort = flag.String("locator", "localhost:5433", "Vertica's host and port")
