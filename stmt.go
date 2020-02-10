@@ -72,6 +72,8 @@ type stmt struct {
 	posArgCnt    int
 	paramTypes   []common.ParameterType
 	lastRowDesc  *msgs.BERowDescMsg
+	// set if Vertica issues an error of ROLLBACK severity
+	rolledBack bool
 }
 
 func newStmt(connection *connection, command string) (*stmt, error) {
@@ -99,40 +101,39 @@ func (s *stmt) pushNamed(name string) {
 
 // Close closes this statement.
 func (s *stmt) Close() error {
-	if s.parseState == parseStateParsed {
-		closeMsg := &msgs.FECloseMsg{TargetType: msgs.CmdTargetTypeStatement, TargetName: s.preparedName}
+	if s.parseState != parseStateParsed {
+		return nil
+	}
+	if s.rolledBack {
+		return nil
+	}
+	closeMsg := &msgs.FECloseMsg{TargetType: msgs.CmdTargetTypeStatement, TargetName: s.preparedName}
 
-		//s.conn.lockSessionMutex()
-		//defer s.conn.unlockSessionMutex()
-
-		if err := s.conn.sendMessage(closeMsg); err != nil {
-			return err
-		}
-
-		if err := s.conn.sendMessage(&msgs.FEFlushMsg{}); err != nil {
-			return err
-		}
-
-		for {
-			bMsg, err := s.conn.recvMessage()
-
-			if err != nil {
-				return err
-			}
-
-			switch bMsg.(type) {
-			case *msgs.BECloseCompleteMsg:
-				s.parseState = parseStateUnparsed
-				return nil
-			case *msgs.BECmdDescriptionMsg:
-				continue
-			default:
-				s.conn.defaultMessageHandler(bMsg)
-			}
-		}
+	if err := s.conn.sendMessage(closeMsg); err != nil {
+		return err
 	}
 
-	return nil
+	if err := s.conn.sendMessage(&msgs.FEFlushMsg{}); err != nil {
+		return err
+	}
+
+	for {
+		bMsg, err := s.conn.recvMessage()
+
+		if err != nil {
+			return err
+		}
+
+		switch bMsg.(type) {
+		case *msgs.BECloseCompleteMsg:
+			s.parseState = parseStateUnparsed
+			return nil
+		case *msgs.BECmdDescriptionMsg:
+			continue
+		default:
+			s.conn.defaultMessageHandler(bMsg)
+		}
+	}
 }
 
 // NumInput is used by database/sql to sanity check the number of arguments given
@@ -280,7 +281,7 @@ func (s *stmt) QueryContextRaw(ctx context.Context, baseArgs []driver.NamedValue
 		case *msgs.BECmdCompleteMsg:
 			break
 		case *msgs.BEErrorMsg:
-			return newEmptyRows(), msg.ToErrorType()
+			return newEmptyRows(), s.evaluateErrorMsg(msg)
 		case *msgs.BEEmptyQueryResponseMsg:
 			return newEmptyRows(), nil
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg:
@@ -388,6 +389,13 @@ func (s *stmt) interpolate(args []driver.NamedValue) (string, error) {
 	return result, nil
 }
 
+func (s *stmt) evaluateErrorMsg(msg *msgs.BEErrorMsg) error {
+	if msg.Severity == "ROLLBACK" {
+		s.rolledBack = true
+	}
+	return msg.ToErrorType()
+}
+
 func (s *stmt) prepareAndDescribe() error {
 
 	parseMsg := &msgs.FEParseMsg{
@@ -493,7 +501,7 @@ func (s *stmt) collectResults(ctx context.Context) (*rows, error) {
 			s.lastRowDesc = msg
 			rows = newRows(ctx, s.lastRowDesc, s.conn.serverTZOffset)
 		case *msgs.BEErrorMsg:
-			return newEmptyRows(), msg.ToErrorType()
+			return newEmptyRows(), s.evaluateErrorMsg(msg)
 		case *msgs.BEEmptyQueryResponseMsg:
 			return newEmptyRows(), nil
 		case *msgs.BEBindCompleteMsg, *msgs.BECmdDescriptionMsg:
