@@ -129,24 +129,22 @@ func (v *connection) Prepare(query string) (driver.Stmt, error) {
 	return v.PrepareContext(context.Background(), query)
 }
 
-func mapConnErr(err error) error {
-	if err.Error() == "EOF" {
-		return driver.ErrBadConn
-	}
-	return err
-}
-
 // Ping implements the Pinger interface for connection. Use this to check for a valid connection state.
 // This has to prepare AND execute the query in case prepared statements are disabled.
 func (v *connection) Ping(ctx context.Context) error {
 	stmt, err := v.PrepareContext(ctx, "select 1 as test")
 	if err != nil {
-		return mapConnErr(err)
+		return driver.ErrBadConn
+	}
+	defer stmt.Close()
+	// If we are preparing statements server side, successfully preparing verifies the connection
+	if v.usePreparedStmts {
+		return nil
 	}
 	queryContext := stmt.(driver.StmtQueryContext)
 	rows, err := queryContext.QueryContext(ctx, nil)
 	if err != nil {
-		mapConnErr(err)
+		return driver.ErrBadConn
 	}
 	rows.Close()
 	return nil
