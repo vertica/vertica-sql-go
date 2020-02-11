@@ -792,7 +792,9 @@ func TestConnectionClosure(t *testing.T) {
 	rows.Close()
 	adminDB.Query("select close_user_sessions('TestGuy')")
 	_, err = userDB.Query(userQuery)
-	assertErr(t, err, "EOF")
+	if err == nil {
+		t.Error("Should have seen an error on second query")
+	}
 	rows, err = userDB.Query(userQuery)
 	assertNoErr(t, err)
 	rows.Close()
