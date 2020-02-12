@@ -791,12 +791,13 @@ func TestConnectionClosure(t *testing.T) {
 	assertNoErr(t, err)
 	rows.Close()
 	adminDB.Query("select close_user_sessions('TestGuy')")
-	_, err = userDB.Query(userQuery)
+	rows, err = userDB.Query(userQuery)
+	// Depending on Go version this second query may or may not error
 	if err == nil {
-		t.Error("Should have seen an error on second query")
+		rows.Close()
 	}
 	rows, err = userDB.Query(userQuery)
-	assertNoErr(t, err)
+	assertNoErr(t, err) // Should definitely have a working connection again here
 	rows.Close()
 }
 
