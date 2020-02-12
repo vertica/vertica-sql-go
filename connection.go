@@ -129,6 +129,33 @@ func (v *connection) Prepare(query string) (driver.Stmt, error) {
 	return v.PrepareContext(context.Background(), query)
 }
 
+// Ping implements the Pinger interface for connection. Use this to check for a valid connection state.
+// This has to prepare AND execute the query in case prepared statements are disabled.
+func (v *connection) Ping(ctx context.Context) error {
+	stmt, err := v.PrepareContext(ctx, "select 1 as test")
+	if err != nil {
+		return driver.ErrBadConn
+	}
+	defer stmt.Close()
+	// If we are preparing statements server side, successfully preparing verifies the connection
+	if v.usePreparedStmts {
+		return nil
+	}
+	queryContext := stmt.(driver.StmtQueryContext)
+	rows, err := queryContext.QueryContext(ctx, nil)
+	if err != nil {
+		return driver.ErrBadConn
+	}
+	rows.Close()
+	return nil
+}
+
+// ResetSession implements the SessionResetter interface for connection. This allows the sql
+// package to evaluate the connection state when managing the connection pool.
+func (v *connection) ResetSession(ctx context.Context) error {
+	return v.Ping(ctx)
+}
+
 // newConnection constructs a new Vertica Connection object based on the connection string.
 func newConnection(connString string) (*connection, error) {
 
