@@ -105,6 +105,8 @@ func (s *stmt) Close() error {
 		return nil
 	}
 	if s.rolledBack {
+		s.parseState = parseStateUnparsed
+		s.conn.dead = true
 		return nil
 	}
 	closeMsg := &msgs.FECloseMsg{TargetType: msgs.CmdTargetTypeStatement, TargetName: s.preparedName}
