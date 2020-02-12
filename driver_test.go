@@ -780,6 +780,27 @@ func TestEnableResultCache(t *testing.T) {
 	testEnableResultCachePageSized(t, connDB, vCtx, 0)
 }
 
+func TestConnectionClosure(t *testing.T) {
+	adminDB := openConnection(t, "test_connection_closed_pre")
+	defer closeConnection(t, adminDB, "test_connection_closed_post")
+	const userQuery = "select 1 as test"
+
+	userDB, _ := sql.Open("vertica", otherConnectString)
+	defer userDB.Close()
+	rows, err := userDB.Query(userQuery)
+	assertNoErr(t, err)
+	rows.Close()
+	adminDB.Query("select close_user_sessions('TestGuy')")
+	rows, err = userDB.Query(userQuery)
+	// Depending on Go version this second query may or may not error
+	if err == nil {
+		rows.Close()
+	}
+	rows, err = userDB.Query(userQuery)
+	assertNoErr(t, err) // Should definitely have a working connection again here
+	rows.Close()
+}
+
 var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
 var verticaPassword = flag.String("password", os.Getenv("VERTICA_TEST_PASSWORD"), "Vertica password for this user")
 var verticaHostPort = flag.String("locator", "localhost:5433", "Vertica's host and port")
