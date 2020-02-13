@@ -32,55 +32,62 @@ package msgs
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-import "fmt"
+import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
+)
 
 // BEDataRowMsg docs
 type BEDataRowMsg struct {
-	RowData [][]byte
+	rowBuffer *bytes.Buffer
+}
+
+// ColumnExtractor pulls columns out of a row
+type ColumnExtractor struct {
+	NumCols uint16
+	data    []byte
+	idx     int32
+}
+
+// Chunk provides the raw bytes for a column of data
+func (c *ColumnExtractor) Chunk() []byte {
+	size := int32(binary.BigEndian.Uint32(c.data[c.idx : c.idx+4]))
+	c.idx += 4
+	if size == -1 {
+		return nil
+	}
+	chunk := c.data[c.idx : c.idx+size]
+	c.idx += size
+	return chunk
 }
 
 // CreateFromMsgBody docs
 func (b *BEDataRowMsg) CreateFromMsgBody(buf *msgBuffer) (BackEndMsg, error) {
-	res := &BEDataRowMsg{}
-
-	numCols := buf.readInt16()
-
-	res.RowData = make([][]byte, numCols)
-
-	for i := int16(0); i < numCols; i++ {
-		size := buf.readInt32()
-		if size != -1 {
-			res.RowData[i] = make([]byte, size)
-			buf.readBytes(res.RowData[i])
-		} else {
-			res.RowData[i] = nil
-		}
-	}
-
+	newBuf := new(bytes.Buffer)
+	newBuf.Grow(buf.buf.Len())
+	newBuf.ReadFrom(buf.buf)
+	res := &BEDataRowMsg{rowBuffer: newBuf}
 	return res, nil
 }
 
-func (b *BEDataRowMsg) RevertToBytes() []byte {
-	buf := newMsgBuffer()
-
-	buffLen := uint16(len(b.RowData))
-	buf.appendUint16(buffLen)
-
-	var i uint16
-	for i = 0; i < buffLen; i++ {
-		if b.RowData[i] != nil {
-			buf.appendUint32(uint32(len(b.RowData[i])))
-			buf.appendBytes(b.RowData[i])
-		} else {
-			buf.appendInt32(-1)
-		}
+// Columns provides an extractor to begin reading columns
+func (b *BEDataRowMsg) Columns() ColumnExtractor {
+	rowData := b.rowBuffer.Bytes()
+	return ColumnExtractor{
+		NumCols: binary.BigEndian.Uint16(rowData[0:2]),
+		data:    rowData[2:],
 	}
+}
 
-	return buf.bytes()
+// RevertToBytes dumps the message back into plain bytes
+func (b *BEDataRowMsg) RevertToBytes() []byte {
+	return b.rowBuffer.Bytes()
 }
 
 func (b *BEDataRowMsg) String() string {
-	return fmt.Sprintf("DataRow: %d column(s)", len(b.RowData))
+	cols := b.Columns()
+	return fmt.Sprintf("DataRow: %d column(s)", cols.NumCols)
 }
 
 func init() {
