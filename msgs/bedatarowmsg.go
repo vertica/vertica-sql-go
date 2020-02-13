@@ -64,9 +64,8 @@ func (c *ColumnExtractor) Chunk() []byte {
 
 // CreateFromMsgBody docs
 func (b *BEDataRowMsg) CreateFromMsgBody(buf *msgBuffer) (BackEndMsg, error) {
-	newBuf := new(bytes.Buffer)
-	newBuf.Grow(buf.buf.Len())
-	newBuf.ReadFrom(buf.buf)
+	newBuf := bytes.NewBuffer(buf.buf.Bytes())
+	buf.buf.Reset()
 	res := &BEDataRowMsg{rowBuffer: newBuf}
 	return res, nil
 }
