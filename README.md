@@ -395,6 +395,13 @@ Apache 2.0 License, please see `LICENSE` for details.
 
 Have a bug or an idea? Please see `CONTRIBUTING.md` for details.
 
+### Benchmarks
+
+You can run a benchmark and profile it with a command like:
+`go test -bench '^BenchmarkRowsWithLimit$' -benchmem -memprofile memprofile.out -cpuprofile profile.out -run=none`
+
+and then explore it with `go tool pprof`. The `-run` part excludes the tests for brevity.
+
 ## Acknowledgements
 
 We would like to thank the creators and contributors of the vertica-python library, and members of the Vertica team, for their help in understanding the wire protocol.
