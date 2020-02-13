@@ -97,7 +97,7 @@ func (r *rows) reloadFromCache() bool {
 	r.readIndex = 0
 	indexCount := 0
 
-	for true {
+	for {
 		sizeBuf := r.scratch[:4]
 
 		if _, err := io.ReadFull(r.readWriteBuf, sizeBuf); err != nil {
@@ -107,9 +107,8 @@ func (r *rows) reloadFromCache() bool {
 				}
 				r.resultData = r.resultData[0:indexCount]
 				return true
-			} else {
-				return false
 			}
+			return false
 		}
 
 		rowDataSize := binary.LittleEndian.Uint32(sizeBuf)
@@ -156,9 +155,10 @@ func (r *rows) Next(dest []driver.Value) error {
 		}
 	}
 
-	thisRow := r.resultData[r.readIndex]
+	rowCols := r.resultData[r.readIndex].Columns()
 
-	for idx, colVal := range thisRow.RowData {
+	for idx := uint16(0); idx < rowCols.NumCols; idx++ {
+		colVal := rowCols.Chunk()
 		if colVal == nil {
 			dest[idx] = nil
 			continue

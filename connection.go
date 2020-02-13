@@ -360,7 +360,8 @@ func (v *connection) initializeSession() error {
 	}
 
 	// Peek into the results manually.
-	str := string(result.resultData[0].RowData[0])
+	colData := result.resultData[0].Columns()
+	str := string(colData.Chunk())
 
 	if len(str) < 23 {
 		return fmt.Errorf("can't get server timezone: %s", str)
