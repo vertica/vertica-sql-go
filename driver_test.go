@@ -801,6 +801,30 @@ func TestConnectionClosure(t *testing.T) {
 	rows.Close()
 }
 
+func TestConcurrentStatementQuery(t *testing.T) {
+	connDB := openConnection(t, "test_stmt_ordering_threads_pre")
+	defer closeConnection(t, connDB, "test_stmt_ordering_threads_post")
+	stmt, err := connDB.PrepareContext(ctx, "SELECT a FROM stmt_thread_test")
+	assertNoErr(t, err)
+	wg := new(sync.WaitGroup)
+	wg.Add(3)
+	for i := 0; i < 3; i++ {
+		go func() {
+			defer wg.Done()
+			_, err := stmt.QueryContext(ctx)
+			assertNoErr(t, err)
+		}()
+	}
+	wg.Wait()
+}
+
+func TestInvalidDDLStatement(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+	_, err := connDB.Exec("DROP VIEW DOESNOTEXISTVIEW")
+	assertErr(t, err, "does not exist")
+}
+
 var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
 var verticaPassword = flag.String("password", os.Getenv("VERTICA_TEST_PASSWORD"), "Vertica password for this user")
 var verticaHostPort = flag.String("locator", "localhost:5433", "Vertica's host and port")

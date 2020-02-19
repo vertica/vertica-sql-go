@@ -71,6 +71,7 @@ type connection struct {
 	scratch          [512]byte
 	sessionID        string
 	serverTZOffset   string
+	dead             bool // used if a ROLLBACK severity error is encountered
 	sessMutex        sync.Mutex
 }
 
@@ -153,6 +154,9 @@ func (v *connection) Ping(ctx context.Context) error {
 // ResetSession implements the SessionResetter interface for connection. This allows the sql
 // package to evaluate the connection state when managing the connection pool.
 func (v *connection) ResetSession(ctx context.Context) error {
+	if v.dead {
+		return driver.ErrBadConn
+	}
 	return v.Ping(ctx)
 }
 

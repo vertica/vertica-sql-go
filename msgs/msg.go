@@ -36,25 +36,30 @@ import (
 	"fmt"
 )
 
+// CmdTargetType describes the target of a command
 type CmdTargetType byte
 
-var (
+// Possible command targets
+const (
 	CmdTargetTypePortal    CmdTargetType = 'P'
 	CmdTargetTypeStatement CmdTargetType = 'S'
 )
 
-// FrontEndMsg docs
+// FrontEndMsg is sent from the adapter to the database
 type FrontEndMsg interface {
 	Flatten() ([]byte, byte)
 	String() string
 }
 
-// BackEndMsg docs
+// BackEndMsg is received from the database
 type BackEndMsg interface {
 	CreateFromMsgBody(*msgBuffer) (BackEndMsg, error)
 	String() string
 }
 
+// backEndMsgTypeMap is a global map of message descriptor bytes to instances
+// of that message. The instances are not used directly, but instead are used to
+// construct new values of that message type. This is populated on init.
 var backEndMsgTypeMap = make(map[byte]BackEndMsg)
 
 func registerBackEndMsgType(msgType byte, bem BackEndMsg) {

@@ -46,7 +46,7 @@ type BEErrorMsg struct {
 	Routine  string
 }
 
-// InitFromMsgBody docs
+// CreateFromMsgBody docs
 func (b *BEErrorMsg) CreateFromMsgBody(buf *msgBuffer) (BackEndMsg, error) {
 
 	res := &BEErrorMsg{}
