@@ -33,15 +33,12 @@ package msgs
 // THE SOFTWARE.
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 )
 
 // BEDataRowMsg docs
-type BEDataRowMsg struct {
-	rowBuffer *bytes.Buffer
-}
+type BEDataRowMsg []byte
 
 // ColumnExtractor pulls columns out of a row
 type ColumnExtractor struct {
@@ -64,24 +61,22 @@ func (c *ColumnExtractor) Chunk() []byte {
 
 // CreateFromMsgBody docs
 func (b *BEDataRowMsg) CreateFromMsgBody(buf *msgBuffer) (BackEndMsg, error) {
-	newBuf := bytes.NewBuffer(buf.buf.Bytes())
+	res := BEDataRowMsg(buf.buf.Bytes())
 	buf.buf.Reset()
-	res := &BEDataRowMsg{rowBuffer: newBuf}
-	return res, nil
+	return &res, nil
 }
 
 // Columns provides an extractor to begin reading columns
 func (b *BEDataRowMsg) Columns() ColumnExtractor {
-	rowData := b.rowBuffer.Bytes()
 	return ColumnExtractor{
-		NumCols: binary.BigEndian.Uint16(rowData[0:2]),
-		data:    rowData[2:],
+		NumCols: binary.BigEndian.Uint16((*b)[0:2]),
+		data:    (*b)[2:],
 	}
 }
 
 // RevertToBytes dumps the message back into plain bytes
 func (b *BEDataRowMsg) RevertToBytes() []byte {
-	return b.rowBuffer.Bytes()
+	return *b
 }
 
 func (b *BEDataRowMsg) String() string {

@@ -33,33 +33,33 @@ package vertigo
 // THE SOFTWARE.
 
 import (
-	"bufio"
 	"context"
 	"database/sql/driver"
-	"encoding/binary"
 	"encoding/hex"
 	"io"
-	"io/ioutil"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/vertica/vertica-sql-go/common"
 	"github.com/vertica/vertica-sql-go/msgs"
+	"github.com/vertica/vertica-sql-go/rowcache"
 )
+
+type rowStore interface {
+	AddRow(msg *msgs.BEDataRowMsg)
+	GetRow() *msgs.BEDataRowMsg
+	Peek() *msgs.BEDataRowMsg
+	Close() error
+	Finalize() error
+}
 
 type rows struct {
 	columnDefs *msgs.BERowDescMsg
-	resultData []*msgs.BEDataRowMsg
+	resultData rowStore
 
-	readIndex     int
 	tzOffset      string
 	inMemRowLimit int
-	resultCache   *os.File
-	readWriteBuf  *bufio.ReadWriter
-	cachingFailed bool
-	scratch       [512]byte
 }
 
 var (
@@ -80,82 +80,16 @@ func (r *rows) Columns() []string {
 // Close closes the read cursor
 // Interface: driver.Rows
 func (r *rows) Close() error {
-	if r.resultCache != nil {
-		name := r.resultCache.Name()
-		r.readWriteBuf.Flush()
-		r.resultCache.Close()
-		return os.Remove(name)
-	}
-
-	return nil
-}
-
-// Returns true if there was any data remaining to be loaded.
-func (r *rows) reloadFromCache() bool {
-	hadData := false
-
-	r.readIndex = 0
-	indexCount := 0
-
-	for {
-		sizeBuf := r.scratch[:4]
-
-		if _, err := io.ReadFull(r.readWriteBuf, sizeBuf); err != nil {
-			if err == io.EOF {
-				if indexCount == 0 {
-					return false
-				}
-				r.resultData = r.resultData[0:indexCount]
-				return true
-			}
-			return false
-		}
-
-		rowDataSize := binary.LittleEndian.Uint32(sizeBuf)
-
-		var rowBuf []byte
-		rowBytes := r.scratch[4:]
-		if rowDataSize <= uint32(len(rowBytes)) {
-			rowBuf = rowBytes[:rowDataSize]
-		} else {
-			rowBuf = make([]byte, rowDataSize)
-		}
-		if _, err := io.ReadFull(r.readWriteBuf, rowBuf); err != nil {
-			return false
-		}
-
-		msgBuf := msgs.NewMsgBufferFromBytes(rowBuf)
-
-		drm := &msgs.BEDataRowMsg{}
-
-		msg, _ := drm.CreateFromMsgBody(msgBuf)
-
-		r.resultData[indexCount] = msg.(*msgs.BEDataRowMsg)
-		indexCount++
-
-		hadData = true
-
-		// If we've reached the original capacity of the slice, we're done.
-		if indexCount == len(r.resultData) {
-			break
-		}
-	}
-
-	return hadData
+	return r.resultData.Close()
 }
 
 func (r *rows) Next(dest []driver.Value) error {
-	if r.readIndex == len(r.resultData) {
-		if r.resultCache != nil {
-			if !r.reloadFromCache() {
-				return io.EOF
-			}
-		} else {
-			return io.EOF
-		}
+	nextRow := r.resultData.GetRow()
+	if nextRow == nil {
+		return io.EOF
 	}
 
-	rowCols := r.resultData[r.readIndex].Columns()
+	rowCols := nextRow.Columns()
 
 	for idx := uint16(0); idx < rowCols.NumCols; idx++ {
 		colVal := rowCols.Chunk()
@@ -184,8 +118,6 @@ func (r *rows) Next(dest []driver.Value) error {
 		}
 	}
 
-	r.readIndex++
-
 	return nil
 }
 
@@ -207,65 +139,38 @@ func parseTimestampTZColumn(fullString string) (driver.Value, error) {
 }
 
 func (r *rows) finalize() {
-	if r.resultCache != nil {
-		name := r.resultCache.Name()
-		r.readWriteBuf.Flush()
-		r.resultCache.Close()
-
-		r.resultCache, _ = os.OpenFile(name, os.O_RDONLY|os.O_EXCL, 0600)
-		r.readWriteBuf = bufio.NewReadWriter(bufio.NewReader(r.resultCache), bufio.NewWriter(r.resultCache))
-	}
-}
-
-func (r *rows) writeCachedRow(rowData *msgs.BEDataRowMsg) {
-	b := rowData.RevertToBytes()
-	sizeBuf := r.scratch[:4]
-	binary.LittleEndian.PutUint32(sizeBuf, uint32(len(b)))
-	r.readWriteBuf.Write(sizeBuf)
-	r.readWriteBuf.Write(b)
+	r.resultData.Finalize()
 }
 
 func (r *rows) addRow(rowData *msgs.BEDataRowMsg) {
-	if r.resultCache != nil {
-		r.writeCachedRow(rowData)
-		return
-	}
-
-	if r.inMemRowLimit > 0 && !r.cachingFailed && len(r.resultData) == r.inMemRowLimit {
-		var err error
-		r.resultCache, err = ioutil.TempFile("", ".vertica-sql-go.*.dat")
-		r.readWriteBuf = bufio.NewReadWriter(bufio.NewReader(r.resultCache), bufio.NewWriter(r.resultCache))
-
-		if err != nil {
-			r.cachingFailed = true
-			r.resultData = append(r.resultData, rowData)
-		} else {
-			r.writeCachedRow(rowData)
-			return
-		}
-	}
-
-	r.resultData = append(r.resultData, rowData)
+	r.resultData.AddRow(rowData)
 }
 
 func newRows(ctx context.Context, columnsDefsMsg *msgs.BERowDescMsg, tzOffset string) *rows {
 
 	rowBufferSize := defaultRowBufferSize
 	inMemRowLimit := 0
+	var resultData rowStore
+	var err error
 
 	if vCtx, ok := ctx.(VerticaContext); ok {
 		rowBufferSize = vCtx.GetInMemoryResultRowLimit()
 		inMemRowLimit = rowBufferSize
 	}
+	if inMemRowLimit != 0 {
+		resultData, err = rowcache.NewFileCache(inMemRowLimit)
+		if err != nil {
+			resultData = rowcache.NewMemoryCache(rowBufferSize)
+		}
+	} else {
+		resultData = rowcache.NewMemoryCache(rowBufferSize)
+	}
 
 	res := &rows{
 		columnDefs:    columnsDefsMsg,
-		resultData:    make([]*msgs.BEDataRowMsg, 0, rowBufferSize),
+		resultData:    resultData,
 		tzOffset:      tzOffset,
 		inMemRowLimit: inMemRowLimit,
-		resultCache:   nil,
-		readWriteBuf:  nil,
-		cachingFailed: false,
 	}
 
 	return res

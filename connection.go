@@ -355,12 +355,14 @@ func (v *connection) initializeSession() error {
 		return err
 	}
 
-	if len(result.Columns()) != 1 && result.Columns()[1] != "now" || len(result.resultData) != 1 {
+	firstRow := result.resultData.Peek()
+
+	if len(result.Columns()) != 1 && result.Columns()[1] != "now" || firstRow == nil {
 		return fmt.Errorf("unable to initialize session; functionality may be unreliable")
 	}
 
 	// Peek into the results manually.
-	colData := result.resultData[0].Columns()
+	colData := firstRow.Columns()
 	str := string(colData.Chunk())
 
 	if len(str) < 23 {
