@@ -403,5 +403,9 @@ You can run a benchmark and profile it with a command like:
 and then explore it with `go tool pprof`. The `-run` part excludes the tests for brevity.
 
 ## Acknowledgements
-
-We would like to thank the creators and contributors of the vertica-python library, and members of the Vertica team, for their help in understanding the wire protocol.
+* @grzm (Github)
+* @watercraft (Github)
+* @fbernier (Github)
+* @mlh758 (Github) for the awesome work filling in and enhancing the driver in many important ways.
+* Tom Wall (Vertica) for the infinite patience and deep knowledge.
+* The creators and contributors of the vertica-python library, and members of the Vertica team, for their help in understanding the wire protocol.

@@ -1,6 +1,6 @@
 package vertigo
 
-// Copyright (c) 2019 Micro Focus or one of its affiliates.
+// Copyright (c) 2019-2020 Micro Focus or one of its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -40,12 +40,13 @@ import (
 
 type LogMessage struct {
 	Prefix string
-	Name string
-	Msg string
+	Name   string
+	Msg    string
 }
 type MyLogger struct {
 	LastMessage *LogMessage
 }
+
 func (l *MyLogger) Write(prefix string, name string, msg string) {
 	l.LastMessage = &LogMessage{Prefix: prefix, Name: name, Msg: msg}
 }
