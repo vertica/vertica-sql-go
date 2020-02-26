@@ -114,9 +114,17 @@ func (l *Lexer) skipUntil(val rune) {
 	}
 }
 
-func (l *Lexer) consumeToSpace() {
-	for !l.done() && !unicode.IsSpace(l.next()) {
+func (l *Lexer) consumeIdent() {
+	for !l.done() && !l.isEndIdent(l.next()) {
 	}
+}
+
+func (l *Lexer) isEndIdent(r rune) bool {
+	shouldEnd := unicode.IsSpace(r) || strings.ContainsRune(",)", r)
+	if shouldEnd {
+		l.backup()
+	}
+	return shouldEnd
 }
 
 func (l *Lexer) next() rune {
@@ -201,10 +209,7 @@ func lexNamedParam(l *Lexer) stateFunc {
 	l.next()
 	l.start = l.pos
 	// advance through the name
-	l.consumeToSpace()
-	if !l.done() || strings.HasSuffix(l.input[l.start:l.pos], "\n") {
-		l.backup() // move back before the whitespace character
-	}
+	l.consumeIdent()
 	l.onNamed(strings.ToUpper(l.input[l.start:l.pos]))
 	l.start = l.pos
 	l.output.WriteRune('?')
