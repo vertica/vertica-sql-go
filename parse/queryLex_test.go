@@ -84,6 +84,18 @@ func TestLexNamed(t *testing.T) {
 			expectedOutput: "select * from whatever where a = ? and b = ? and c = '@fooledYou'",
 		},
 		{
+			name:           "named params with in clause",
+			query:          "select * from whatever where a in (@first, @second)",
+			expectedNamed:  []string{"FIRST", "SECOND"},
+			expectedOutput: "select * from whatever where a in (?, ?)",
+		},
+		{
+			name:           "single named param with in clause",
+			query:          "select * from whatever where a in (@first)",
+			expectedNamed:  []string{"FIRST"},
+			expectedOutput: "select * from whatever where a in (?)",
+		},
+		{
 			name:           "with mixed case named parameters",
 			query:          "select * from whatever where a = @first and b = @fIrSt",
 			expectedNamed:  []string{"FIRST", "FIRST"},
