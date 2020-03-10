@@ -399,6 +399,8 @@ func (v *connection) defaultMessageHandler(bMsg msgs.BackEndMsg) (bool, error) {
 		}
 	case *msgs.BENoticeMsg:
 		break
+	case *msgs.BEParamStatusMsg:
+		connectionLogger.Debug("%v", msg)
 	default:
 		handled = false
 		err = fmt.Errorf("unhandled message: %v", msg)
