@@ -44,6 +44,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/vertica/vertica-sql-go/logger"
 )
 
@@ -816,6 +817,25 @@ func TestConcurrentStatementQuery(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestColumnsTypes(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+	//connDB, err := sql.Open("vertica", "vertica://user:password@localhost:5433/test")
+	//if err != nil {
+	//	fmt.Println(err)
+	//}
+	//defer connDB.Close()
+	ctx := context.Background()
+	connDB.PingContext(ctx)
+	rows, _ := connDB.QueryContext(ctx, "SELECT * FROM v_monitor.cpu_usage LIMIT 5")
+	defer rows.Close()
+	cols, _ := rows.ColumnTypes()
+	spew.Dump(cols)
+	for _, column := range cols {
+		spew.Dump(column.DatabaseTypeName())
+	}
 }
 
 func TestInvalidDDLStatement(t *testing.T) {
