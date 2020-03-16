@@ -34,6 +34,7 @@ package vertigo
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"encoding/hex"
 	"io"
@@ -55,8 +56,9 @@ type rowStore interface {
 }
 
 type rows struct {
-	columnDefs *msgs.BERowDescMsg
-	resultData rowStore
+	columnDefs    *msgs.BERowDescMsg
+	goColumnTypes []*sql.ColumnType
+	resultData    rowStore
 
 	tzOffset      string
 	inMemRowLimit int
@@ -175,6 +177,22 @@ func newRows(ctx context.Context, columnsDefsMsg *msgs.BERowDescMsg, tzOffset st
 
 	return res
 }
+
+func (r *rows) ColumnTypeDatabaseTypeName(index int) string {
+	return r.columnDefs.Columns[index].DataTypeName
+}
+
+func (r *rows) ColumnTypeLength(index int) (length int64, ok bool) {
+	return int64(r.columnDefs.Columns[index].Length), true
+}
+
+func (r *rows) ColumnTypeNullable(index int) (isNullable bool, ok bool) {
+	return r.columnDefs.Columns[index].Nullable, r.columnDefs.Columns[index].Nullable
+}
+
+//func (r *rows) ColumnTypePrecisionScale(index int) (precision, scale int64, ok bool) {
+//	return r.columnDefs.Columns[index].
+//}
 
 func newEmptyRows() *rows {
 	cdf := make([]*msgs.BERowDescColumnDef, 0)
