@@ -510,7 +510,28 @@ func (v *connection) authSendSHA512Password(extraAuthData []byte) error {
 }
 
 func (v *connection) sync() error {
-	return v.sendMessage(&msgs.FESyncMsg{})
+	err := v.sendMessage(&msgs.FESyncMsg{})
+
+	if err != nil {
+		return err
+	}
+
+	for true {
+		bem, err := v.recvMessage()
+		if err != nil {
+			return err
+		}
+
+		_, ok := bem.(*msgs.BEReadyForQueryMsg)
+
+		if ok {
+			break
+		}
+
+		_, _ = v.defaultMessageHandler(bem)
+	}
+
+	return nil
 }
 
 func (v *connection) lockSessionMutex() {
