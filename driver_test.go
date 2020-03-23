@@ -831,6 +831,9 @@ func TestLockOnError(t *testing.T) {
 
 	_, err := connDB.Query("select throw_error('whatever')")
 	assertErr(t, err, "ERROR: whatever")
+
+	_, err = connDB.QueryContext(ctx, "select 1")
+	assertNoErr(t, err)
 }
 
 var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
