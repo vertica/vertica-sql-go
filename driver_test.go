@@ -825,6 +825,14 @@ func TestInvalidDDLStatement(t *testing.T) {
 	assertErr(t, err, "does not exist")
 }
 
+func TestLockOnError(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+
+	_, err := connDB.Query("select throw_error('whatever')")
+	assertErr(t, err, "ERROR: whatever")
+}
+
 var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
 var verticaPassword = flag.String("password", os.Getenv("VERTICA_TEST_PASSWORD"), "Vertica password for this user")
 var verticaHostPort = flag.String("locator", "localhost:5433", "Vertica's host and port")

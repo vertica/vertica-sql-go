@@ -503,6 +503,7 @@ func (s *stmt) collectResults(ctx context.Context) (*rows, error) {
 			s.lastRowDesc = msg
 			rows = newRows(ctx, s.lastRowDesc, s.conn.serverTZOffset)
 		case *msgs.BEErrorMsg:
+			s.conn.sync()
 			return newEmptyRows(), s.evaluateErrorMsg(msg)
 		case *msgs.BEEmptyQueryResponseMsg:
 			return newEmptyRows(), nil
