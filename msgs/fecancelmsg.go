@@ -1,6 +1,6 @@
 package msgs
 
-// Copyright (c) 2019-2020 Micro Focus or one of its affiliates.
+// Copyright (c) 2020 Micro Focus or one of its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -32,75 +32,28 @@ package msgs
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-import (
-	"database/sql"
-	"database/sql/driver"
-	"fmt"
-	"time"
-)
+import "fmt"
 
-// FEBindMsg docs
-type FEBindMsg struct {
-	Portal    string
-	Statement string
-	NamedArgs []driver.NamedValue
-	OIDTypes  []int32
+const cancelMsgID uint32 = 80877102
+
+// FECancelMsg signals a cancellation by the user
+type FECancelMsg struct {
+	PID uint32
+	Key uint32
 }
 
 // Flatten docs
-func (m *FEBindMsg) Flatten() ([]byte, byte) {
-
+func (m *FECancelMsg) Flatten() ([]byte, byte) {
 	buf := newMsgBuffer()
-
-	buf.appendString(m.Portal)
-	buf.appendString(m.Statement)
-
-	// no parameter format codes for now
-	buf.appendUint16(0)
-
-	// number of arguments
-	buf.appendUint16(uint16(len(m.NamedArgs)))
-
-	for _, oidType := range m.OIDTypes {
-		buf.appendUint32(uint32(oidType))
-	}
-
-	var strVal string
-
-	for _, arg := range m.NamedArgs {
-		switch v := arg.Value.(type) {
-		case int64, float64:
-			strVal = fmt.Sprintf("%v", v)
-		case string:
-			strVal = v
-		case bool:
-			if v {
-				strVal = "1"
-			} else {
-				strVal = "0"
-			}
-		case sql.NullBool, sql.NullFloat64, sql.NullInt64, sql.NullString:
-			buf.appendUint32(0xffffffff)
-			continue
-		case time.Time:
-			strVal = v.Format("2006-01-02T15:04:05.999999Z07:00")
-		default:
-			strVal = "??HELP??"
-		}
-
-		buf.appendUint32(uint32(len(strVal)))
-		buf.appendBytes([]byte(strVal))
-	}
-
-	buf.appendUint16(0) // all columns in default format
-
-	return buf.bytes(), 'B'
+	buf.appendUint32(cancelMsgID)
+	buf.appendUint32(m.PID)
+	buf.appendUint32(m.Key)
+	return buf.bytes(), 0
 }
 
-func (m *FEBindMsg) String() string {
+func (m *FECancelMsg) String() string {
 	return fmt.Sprintf(
-		"Bind: Portal='%s', Statement='%s', ArgC=%d",
-		m.Portal,
-		m.Statement,
-		len(m.OIDTypes))
+		"Cancel: TargetPID=%d, TargetKey=%d",
+		m.PID,
+		m.Key)
 }

@@ -39,6 +39,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"os"
 	"reflect"
 	"regexp"
@@ -243,8 +244,35 @@ func (s *stmt) QueryContextRaw(ctx context.Context, baseArgs []driver.NamedValue
 		return newEmptyRows(), err
 	}
 
+	doneChan := make(chan bool, 1)
+	go func(pid, key uint32) {
+		select {
+		case <-doneChan:
+			return
+		case <-ctx.Done():
+			stmtLogger.Info("Context cancelled, cancelling %s", s.preparedName)
+			cancelMsg := msgs.FECancelMsg{PID: pid, Key: key}
+			conn, err := net.Dial("tcp", s.conn.connURL.Host)
+			if err != nil {
+				stmtLogger.Warn("unable to establish connection for cancellation")
+				return
+			}
+			conn.SetDeadline(time.Now().Add(10 * time.Second))
+			if err := s.conn.sendMessageTo(&cancelMsg, conn); err != nil {
+				stmtLogger.Warn("unable to send cancel message: %v", err)
+			}
+			if err := conn.Close(); err != nil {
+				stmtLogger.Warn("error closing cancel connection: %v", err)
+			}
+			stmtLogger.Info("Cancelled %s", s.preparedName)
+		}
+	}(s.conn.backendPID, s.conn.cancelKey)
+
 	s.conn.lockSessionMutex()
 	defer s.conn.unlockSessionMutex()
+	defer func() {
+		doneChan <- true
+	}()
 
 	// If we have a prepared statement, go through bind/execute() phases instead.
 	if s.parseState == parseStateParsed {
@@ -288,7 +316,7 @@ func (s *stmt) QueryContextRaw(ctx context.Context, baseArgs []driver.NamedValue
 			return newEmptyRows(), nil
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg:
 			rows.finalize()
-			return rows, nil
+			return rows, ctx.Err()
 		case *msgs.BEInitSTDINLoadMsg:
 			s.copySTDIN(ctx)
 		default:
@@ -511,7 +539,7 @@ func (s *stmt) collectResults(ctx context.Context) (*rows, error) {
 			continue
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg, *msgs.BECmdCompleteMsg:
 			rows.finalize()
-			return rows, nil
+			return rows, ctx.Err()
 		case *msgs.BEInitSTDINLoadMsg:
 			s.copySTDIN(ctx)
 		default:
