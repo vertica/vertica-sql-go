@@ -250,23 +250,27 @@ func (v *connection) recvMessage() (msgs.BackEndMsg, error) {
 }
 
 func (v *connection) sendMessage(msg msgs.FrontEndMsg) error {
+	return v.sendMessageTo(msg, v.conn)
+}
+
+func (v *connection) sendMessageTo(msg msgs.FrontEndMsg, conn net.Conn) error {
 	var result error = nil
 
 	msgBytes, msgTag := msg.Flatten()
 
 	if msgTag != 0 {
-		_, result = v.conn.Write([]byte{msgTag})
+		_, result = conn.Write([]byte{msgTag})
 	}
 
 	if result == nil {
 		sizeBytes := v.scratch[:4]
 		binary.BigEndian.PutUint32(sizeBytes, uint32(len(msgBytes)+4))
 
-		_, result = v.conn.Write(sizeBytes)
+		_, result = conn.Write(sizeBytes)
 
 		if result == nil {
 			if len(msgBytes) > 0 {
-				_, result = v.conn.Write(msgBytes)
+				_, result = conn.Write(msgBytes)
 			}
 		}
 	}
@@ -510,7 +514,28 @@ func (v *connection) authSendSHA512Password(extraAuthData []byte) error {
 }
 
 func (v *connection) sync() error {
-	return v.sendMessage(&msgs.FESyncMsg{})
+	err := v.sendMessage(&msgs.FESyncMsg{})
+
+	if err != nil {
+		return err
+	}
+
+	for true {
+		bem, err := v.recvMessage()
+		if err != nil {
+			return err
+		}
+
+		_, ok := bem.(*msgs.BEReadyForQueryMsg)
+
+		if ok {
+			break
+		}
+
+		_, _ = v.defaultMessageHandler(bem)
+	}
+
+	return nil
 }
 
 func (v *connection) lockSessionMutex() {

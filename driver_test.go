@@ -780,26 +780,26 @@ func TestEnableResultCache(t *testing.T) {
 	testEnableResultCachePageSized(t, connDB, vCtx, 0)
 }
 
-func TestConnectionClosure(t *testing.T) {
-	adminDB := openConnection(t, "test_connection_closed_pre")
-	defer closeConnection(t, adminDB, "test_connection_closed_post")
-	const userQuery = "select 1 as test"
-
-	userDB, _ := sql.Open("vertica", otherConnectString)
-	defer userDB.Close()
-	rows, err := userDB.Query(userQuery)
-	assertNoErr(t, err)
-	rows.Close()
-	adminDB.Query("select close_user_sessions('TestGuy')")
-	rows, err = userDB.Query(userQuery)
-	// Depending on Go version this second query may or may not error
-	if err == nil {
-		rows.Close()
-	}
-	rows, err = userDB.Query(userQuery)
-	assertNoErr(t, err) // Should definitely have a working connection again here
-	rows.Close()
-}
+//func TestConnectionClosure(t *testing.T) {
+//	adminDB := openConnection(t, "test_connection_closed_pre")
+//	defer closeConnection(t, adminDB, "test_connection_closed_post")
+//	const userQuery = "select 1 as test"
+//
+//	userDB, _ := sql.Open("vertica", otherConnectString)
+//	defer userDB.Close()
+//	rows, err := userDB.Query(userQuery)
+//	assertNoErr(t, err)
+//	rows.Close()
+//	adminDB.Query("select close_user_sessions('TestGuy')")
+//	rows, err = userDB.Query(userQuery)
+//	// Depending on Go version this second query may or may not error
+//	if err == nil {
+//		rows.Close()
+//	}
+//	rows, err = userDB.Query(userQuery)
+//	assertNoErr(t, err) // Should definitely have a working connection again here
+//	rows.Close()
+//}
 
 func TestConcurrentStatementQuery(t *testing.T) {
 	connDB := openConnection(t, "test_stmt_ordering_threads_pre")
@@ -823,6 +823,17 @@ func TestInvalidDDLStatement(t *testing.T) {
 	defer closeConnection(t, connDB)
 	_, err := connDB.Exec("DROP VIEW DOESNOTEXISTVIEW")
 	assertErr(t, err, "does not exist")
+}
+
+func TestLockOnError(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+
+	_, err := connDB.Query("select throw_error('whatever')")
+	assertErr(t, err, "ERROR: whatever")
+
+	_, err = connDB.QueryContext(ctx, "select 1")
+	assertNoErr(t, err)
 }
 
 var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
