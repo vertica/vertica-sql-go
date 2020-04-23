@@ -180,6 +180,9 @@ func newConnection(connString string) (*connection, error) {
 		result.usePreparedStmts = iFlag == "1"
 	}
 
+	// Read connection load balance flag.
+	loadBalanceFlag := result.connURL.Query().Get("connection_load_balance")
+
 	sslFlag := strings.ToLower(result.connURL.Query().Get("tlsmode"))
 	if sslFlag == "" {
 		sslFlag = "none"
@@ -189,6 +192,13 @@ func newConnection(connString string) (*connection, error) {
 
 	if err != nil {
 		return nil, fmt.Errorf("cannot connect to %s (%s)", result.connURL.Host, err.Error())
+	}
+
+	// Load Balancing
+	if loadBalanceFlag == "1" {
+		if err = result.balanceLoad(); err != nil {
+			return nil, err
+		}
 	}
 
 	if sslFlag != "none" {
@@ -430,6 +440,67 @@ func (v *connection) readAll(buf []byte) error {
 			return nil
 		}
 	}
+}
+
+func (v *connection) balanceLoad() error {
+	v.sendMessage(&msgs.FELoadBalanceMsg{})
+	response := v.scratch[:1]
+
+	var err error
+	if err = v.readAll(response); err != nil {
+		return err
+	}
+
+	if response[0] == 'N' {
+		// keep existing connection
+		connectionLogger.Debug("<- LoadBalanceResponse: N")
+		connectionLogger.Warn("Load balancing requested but not supported by server")
+		return nil
+	}
+
+	if response[0] != 'Y' {
+		connectionLogger.Debug("<- LoadBalanceResponse: %c", response[0])
+		return fmt.Errorf("Load balancing request gave unknown response: %c", response[0])
+	}
+
+	header := v.scratch[1:5]
+	if err = v.readAll(header); err != nil {
+		return err
+	}
+	msgSize := int(binary.BigEndian.Uint32(header) - 4)
+	msgBytes := v.scratch[5:]
+
+	var y []byte
+	if msgSize > 0 {
+		if msgSize <= len(msgBytes) {
+			y = msgBytes[:msgSize]
+		} else {
+			y = make([]byte, msgSize)
+		}
+		if err = v.readAll(y); err != nil {
+			return err
+		}
+	}
+
+	bem, err := msgs.CreateBackEndMsg(response[0], y)
+	if err != nil {
+		return err
+	}
+	connectionLogger.Debug("<- " + bem.String())
+	msg := bem.(*msgs.BELoadBalanceMsg)
+
+	// v.connURL.Hostname() is used by initializeSSL(), so load balancing info should not write into v.connURL
+	loadBalanceAddr := fmt.Sprintf("%s:%d", msg.Host, msg.Port)
+
+	// Connect to new host
+	v.conn.Close()
+	v.conn, err = net.Dial("tcp", loadBalanceAddr)
+
+	if err != nil {
+		return fmt.Errorf("cannot redirect to %s (%s)", loadBalanceAddr, err.Error())
+	}
+
+	return nil
 }
 
 func (v *connection) initializeSSL(sslFlag string) error {
