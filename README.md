@@ -95,6 +95,8 @@ Currently supported query arguments are:
 |----------------|-------------|--------|
 | use_prepared_statements    | whether to use client-side query interpolation or server-side argument binding | 1 = (default) use server-side bindings |
 |                |             | 0 = user client side interpolation **(LESS SECURE)** |
+| connection_load_balance    | whether to enable connection load balancing on the client side | 0 = (default) disable load balancing |
+|                |             | 1 = enable load balancing |
 | tlsmode            | the ssl/tls policy for this connection | 'none' (default) = don't use SSL/TLS for this connection |
 |                |                                    | 'server' = server must support SSL/TLS, but skip verification **(INSECURE!)** |
 |                |                                    | 'server-strict' = server must support SSL/TLS |
