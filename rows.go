@@ -42,6 +42,7 @@ import (
 	"time"
 
 	"github.com/vertica/vertica-sql-go/common"
+	"github.com/vertica/vertica-sql-go/logger"
 	"github.com/vertica/vertica-sql-go/msgs"
 	"github.com/vertica/vertica-sql-go/rowcache"
 )
@@ -65,6 +66,7 @@ type rows struct {
 var (
 	paddingString        = "000000"
 	defaultRowBufferSize = 256
+	rowLogger            = logger.New("row")
 )
 
 // Columns returns the names of all of the columns
@@ -97,24 +99,29 @@ func (r *rows) Next(dest []driver.Value) error {
 			dest[idx] = nil
 			continue
 		}
+		var err error
 
 		switch r.columnDefs.Columns[idx].DataTypeOID {
 		case common.ColTypeBoolean: // to boolean
 			dest[idx] = colVal[0] == 't'
 		case common.ColTypeInt64: // to integer
-			dest[idx], _ = strconv.Atoi(string(colVal))
+			dest[idx], err = strconv.Atoi(string(colVal))
 		case common.ColTypeVarChar, common.ColTypeLongVarChar, common.ColTypeChar, common.ColTypeUUID: // stays string, convert char to string
 			dest[idx] = string(colVal)
 		case common.ColTypeFloat64, common.ColTypeNumeric: // to float64
-			dest[idx], _ = strconv.ParseFloat(string(colVal), 64)
+			dest[idx], err = strconv.ParseFloat(string(colVal), 64)
 		case common.ColTypeTimestamp: // to time.Time from YYYY-MM-DD hh:mm:ss
-			dest[idx], _ = parseTimestampTZColumn(string(colVal) + r.tzOffset)
+			dest[idx], err = parseTimestampTZColumn(string(colVal) + r.tzOffset)
 		case common.ColTypeTimestampTZ:
-			dest[idx], _ = parseTimestampTZColumn(string(colVal))
+			dest[idx], err = parseTimestampTZColumn(string(colVal))
 		case common.ColTypeVarBinary, common.ColTypeLongVarBinary, common.ColTypeBinary: // to []byte - this one's easy
 			dest[idx] = hex.EncodeToString(colVal)
 		default:
 			dest[idx] = string(colVal)
+		}
+
+		if err != nil {
+			rowLogger.Error("%s", err.Error())
 		}
 	}
 
@@ -131,8 +138,10 @@ func parseTimestampTZColumn(fullString string) (driver.Value, error) {
 			fullString = fullString[0:26-neededPadding] + paddingString[0:neededPadding] + fullString[len(fullString)-3:]
 		}
 		result, err = time.Parse("2006-01-02 15:04:05.000000-07", fullString)
+	} else if strings.Count(fullString, ":") == 3 {
+		result, err = time.Parse("2006-01-02 15:04:05Z07:00", fullString)
 	} else {
-		result, err = time.Parse("2006-01-02 15:04:05-07", fullString)
+		result, err = time.Parse("2006-01-02 15:04:05Z07", fullString)
 	}
 
 	return result, err
