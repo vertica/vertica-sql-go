@@ -86,6 +86,7 @@ func (r *rows) Close() error {
 }
 
 func (r *rows) Next(dest []driver.Value) error {
+	var err error
 	nextRow := r.resultData.GetRow()
 	if nextRow == nil {
 		return io.EOF
@@ -99,7 +100,6 @@ func (r *rows) Next(dest []driver.Value) error {
 			dest[idx] = nil
 			continue
 		}
-		var err error
 
 		switch r.columnDefs.Columns[idx].DataTypeOID {
 		case common.ColTypeBoolean: // to boolean
@@ -125,7 +125,7 @@ func (r *rows) Next(dest []driver.Value) error {
 		}
 	}
 
-	return nil
+	return err
 }
 
 func parseTimestampTZColumn(fullString string) (driver.Value, error) {
