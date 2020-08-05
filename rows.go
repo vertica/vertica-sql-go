@@ -139,9 +139,9 @@ func parseTimestampTZColumn(fullString string) (driver.Value, error) {
 		}
 		result, err = time.Parse("2006-01-02 15:04:05.000000-07", fullString)
 	} else if strings.Count(fullString, ":") == 3 {
-		result, err = time.Parse("2006-01-02 15:04:05Z07:00", fullString)
+		result, err = time.Parse("2006-01-02 15:04:05-07:00", fullString)
 	} else {
-		result, err = time.Parse("2006-01-02 15:04:05Z07", fullString)
+		result, err = time.Parse("2006-01-02 15:04:05-07", fullString)
 	}
 
 	return result, err
