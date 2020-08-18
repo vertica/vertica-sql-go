@@ -34,7 +34,10 @@ package vertigo
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -155,6 +158,23 @@ func closeConnection(t *testing.T, connDB *sql.DB, teardownScript ...interface{}
 		assertExecSQL(t, connDB, teardownScript...)
 	}
 	assertNoErr(t, connDB.Close())
+}
+
+func TestCustomTLSConfiguration(t *testing.T) {
+	if *tlsMode != "custom" {
+		return
+	}
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+	rows, err := connDB.QueryContext(ctx, "SELECT ssl_state FROM sessions")
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	for rows.Next() {
+		var sslState string
+		assertNoErr(t, rows.Scan(&sslState))
+		assertEqual(t, strings.ToLower(sslState), "mutual")
+	}
 }
 
 func TestBasicQuery(t *testing.T) {
@@ -839,8 +859,50 @@ func TestLockOnError(t *testing.T) {
 var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
 var verticaPassword = flag.String("password", os.Getenv("VERTICA_TEST_PASSWORD"), "Vertica password for this user")
 var verticaHostPort = flag.String("locator", "localhost:5433", "Vertica's host and port")
-var tlsMode = flag.String("tlsmode", "none", "SSL/TLS mode (none, server, server-strict)")
+var tlsMode = flag.String("tlsmode", "none", "SSL/TLS mode (none, server, server-strict, custom)")
 var usePreparedStmts = flag.Bool("use_prepared_statements", true, "whether to use prepared statements for all queries/executes")
+
+const (
+	keyPath    string = "tests/ssl/client.key"
+	crtPath    string = "tests/ssl/client.crt"
+	caCertPath string = "tests/ssl/rootCA.crt"
+)
+
+func getCerts(crtPath, keyPath string) ([]tls.Certificate, error) {
+	if _, err := os.Stat(crtPath); err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(keyPath); err != nil {
+		return nil, err
+	}
+	cert, err := tls.LoadX509KeyPair(crtPath, keyPath)
+	if err != nil {
+		return nil, err
+	}
+	return []tls.Certificate{cert}, nil
+}
+
+func getTlsConfig() (*tls.Config, error) {
+
+	certs, err := getCerts(crtPath, keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("could not get certs: %w", err)
+	}
+	caCert, err := ioutil.ReadFile(caCertPath)
+	if err != nil {
+		return nil, fmt.Errorf("could not read cacertfile: %w", err)
+	}
+	caCertPool := x509.NewCertPool()
+	if !caCertPool.AppendCertsFromPEM(caCert) {
+		return nil, errors.New("could not append certs from cacert")
+	}
+
+	return &tls.Config{
+		RootCAs:      caCertPool,
+		Certificates: certs,
+		ServerName:   "vertica",
+	}, nil
+}
 
 func init() {
 	// One or both lines below are necessary depending on your go version
@@ -858,6 +920,16 @@ func init() {
 		usePreparedStmtsString += "1"
 	} else {
 		usePreparedStmtsString += "0"
+	}
+
+	if *tlsMode=="custom" {
+		tlsConfig, err := getTlsConfig()
+		if err != nil {
+			testLogger.Fatal("could not get tls-config: %v", err)
+		}
+		if err := RegisterTLSConfig("custom", tlsConfig); err != nil {
+			testLogger.Fatal("could not register tls config: %v", err)
+		}
 	}
 
 	myDBConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@" + *verticaHostPort + "/" + *verticaUserName + "?" + usePreparedStmtsString + "&tlsMode=" + *tlsMode
