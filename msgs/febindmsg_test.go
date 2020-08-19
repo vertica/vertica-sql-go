@@ -1,5 +1,11 @@
 package msgs
 
+import (
+	"bytes"
+	"database/sql/driver"
+	"testing"
+)
+
 // Copyright (c) 2019-2020 Micro Focus or one of its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,74 +38,66 @@ package msgs
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-import (
-	"database/sql/driver"
-	"fmt"
-	"time"
-)
-
-// FEBindMsg docs
-type FEBindMsg struct {
-	Portal    string
-	Statement string
-	NamedArgs []driver.NamedValue
-	OIDTypes  []int32
-}
-
-// Flatten docs
-func (m *FEBindMsg) Flatten() ([]byte, byte) {
-
-	buf := newMsgBuffer()
-
-	buf.appendString(m.Portal)
-	buf.appendString(m.Statement)
-
-	// no parameter format codes for now
-	buf.appendUint16(0)
-
-	// number of arguments
-	buf.appendUint16(uint16(len(m.NamedArgs)))
-
-	for _, oidType := range m.OIDTypes {
-		buf.appendUint32(uint32(oidType))
+func TestFlatten(t *testing.T) {
+	var testCases = []struct {
+		name     string
+		value    driver.NamedValue
+		expected []byte
+	}{
+		{
+			name: "plain integer",
+			value: driver.NamedValue{
+				Name:    "arg1",
+				Ordinal: 1,
+				Value:   int64(123),
+			},
+			expected: []byte{0x0, 0x0, 0x0, 0x3, 0x31, 0x32, 0x33, 0x0, 0x0},
+		},
+		{
+			name: "naked nil",
+			value: driver.NamedValue{
+				Name:    "arg1",
+				Ordinal: 1,
+				Value:   nil,
+			},
+			expected: []byte{0xff, 0xff, 0xff, 0xff, 0x0, 0x0},
+		},
+		{
+			name: "string",
+			value: driver.NamedValue{
+				Name:    "arg1",
+				Ordinal: 1,
+				Value:   "hello",
+			},
+			expected: []byte{0x0, 0x0, 0x0, 0x5, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x0, 0x0},
+		},
+		{
+			name: "float",
+			value: driver.NamedValue{
+				Name:    "arg1",
+				Ordinal: 1,
+				Value:   float64(12.6),
+			},
+			expected: []byte{0x0, 0x0, 0x0, 0x4, 0x31, 0x32, 0x2e, 0x36, 0x0, 0x0},
+		},
 	}
 
-	var strVal string
-
-	for _, arg := range m.NamedArgs {
-		switch v := arg.Value.(type) {
-		case int64, float64:
-			strVal = fmt.Sprintf("%v", v)
-		case string:
-			strVal = v
-		case bool:
-			if v {
-				strVal = "1"
-			} else {
-				strVal = "0"
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := FEBindMsg{
+				Portal:    "",
+				Statement: "",
+				NamedArgs: []driver.NamedValue{tc.value},
+				OIDTypes:  nil,
 			}
-		case nil:
-			buf.appendUint32(0xffffffff)
-			continue
-		case time.Time:
-			strVal = v.Format("2006-01-02T15:04:05.999999Z07:00")
-		default:
-			strVal = "??HELP??"
-		}
-
-		buf.appendUint32(uint32(len(strVal)))
-		buf.appendBytes([]byte(strVal))
+			result, _ := msg.Flatten()
+			if bytes.Contains(result, []byte("??HELP??")) {
+				t.Error("fell into a bad place, got the panic message")
+			}
+			// Trim those first 6 identical bytes for simplicity
+			if !bytes.Equal(result[6:], tc.expected) {
+				t.Errorf("got %#v expected %#v for message", result, tc.expected)
+			}
+		})
 	}
-
-	buf.appendUint16(0) // all columns in default format
-
-	return buf.bytes(), 'B'
-}
-
-func (m *FEBindMsg) String() string {
-	return fmt.Sprintf(
-		"Bind: Portal='%s', Statement='%s', ArgC=%d",
-		m.Portal,
-		m.Statement,
-		len(m.OIDTypes))
 }
