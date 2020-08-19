@@ -890,11 +890,11 @@ func getTlsConfig() (*tls.Config, error) {
 
 	certs, err := getCerts(crtPath, keyPath)
 	if err != nil {
-		return nil, fmt.Errorf("could not get certs: %w", err)
+		return nil, fmt.Errorf("could not get certs: %v", err)
 	}
 	caCert, err := ioutil.ReadFile(caCertPath)
 	if err != nil {
-		return nil, fmt.Errorf("could not read cacertfile: %w", err)
+		return nil, fmt.Errorf("could not read cacertfile: %v", err)
 	}
 	caCertPool := x509.NewCertPool()
 	if !caCertPool.AppendCertsFromPEM(caCert) {
