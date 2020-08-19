@@ -567,6 +567,7 @@ func (v *connection) initializeSSL(sslFlag string) error {
 		connectionLogger.Info("enabling SSL/TLS server strict mode")
 		v.conn = tls.Client(v.conn, &tls.Config{ServerName: v.connURL.Hostname()})
 	default:
+		connectionLogger.Info("using custom configuration: %s", sslFlag)
 		config, ok := tlsConfigs.get(sslFlag)
 		if !ok {
 			err := fmt.Errorf("tls config %s not registered", sslFlag)

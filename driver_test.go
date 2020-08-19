@@ -170,11 +170,14 @@ func TestCustomTLSConfiguration(t *testing.T) {
 	assertNoErr(t, err)
 	defer rows.Close()
 
+	var sslState string
 	for rows.Next() {
-		var sslState string
 		assertNoErr(t, rows.Scan(&sslState))
-		assertEqual(t, strings.ToLower(sslState), "mutual")
+		if strings.ToLower(sslState)=="mutual" {
+			return
+		}
 	}
+	t.Fatalf("sslstate mutual not found: %s", sslState)
 }
 
 func TestBasicQuery(t *testing.T) {
@@ -863,9 +866,9 @@ var tlsMode = flag.String("tlsmode", "none", "SSL/TLS mode (none, server, server
 var usePreparedStmts = flag.Bool("use_prepared_statements", true, "whether to use prepared statements for all queries/executes")
 
 const (
-	keyPath    string = "tests/ssl/client.key"
-	crtPath    string = "tests/ssl/client.crt"
-	caCertPath string = "tests/ssl/rootCA.crt"
+	keyPath    string = "resources/tests/ssl/client.key"
+	crtPath    string = "resources/tests/ssl/client.crt"
+	caCertPath string = "resources/tests/ssl/rootCA.crt"
 )
 
 func getCerts(crtPath, keyPath string) ([]tls.Certificate, error) {
@@ -900,14 +903,14 @@ func getTlsConfig() (*tls.Config, error) {
 	return &tls.Config{
 		RootCAs:      caCertPool,
 		Certificates: certs,
-		ServerName:   "vertica",
+		ServerName:   "localhost",
 	}, nil
 }
 
 func init() {
 	// One or both lines below are necessary depending on your go version
-	// testing.Init()
-	// flag.Parse()
+	testing.Init()
+	flag.Parse()
 
 	testLogger.Info("user name: %s", *verticaUserName)
 	testLogger.Info("password : **********")
@@ -923,6 +926,7 @@ func init() {
 	}
 
 	if *tlsMode=="custom" {
+		testLogger.Info("loading tls config")
 		tlsConfig, err := getTlsConfig()
 		if err != nil {
 			testLogger.Fatal("could not get tls-config: %v", err)
@@ -932,7 +936,7 @@ func init() {
 		}
 	}
 
-	myDBConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@" + *verticaHostPort + "/" + *verticaUserName + "?" + usePreparedStmtsString + "&tlsMode=" + *tlsMode
+	myDBConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@" + *verticaHostPort + "/" + *verticaUserName + "?" + usePreparedStmtsString + "&tlsmode=" + *tlsMode
 	otherConnectString = "vertica://TestGuy:TestGuyPass@" + *verticaHostPort + "/TestGuy?tlsmode=" + *tlsMode
 	badConnectString = "vertica://TestGuy:TestGuyBadPass@" + *verticaHostPort + "/TestGuy?tlsmode=" + *tlsMode
 
