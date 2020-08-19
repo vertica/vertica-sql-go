@@ -882,6 +882,7 @@ func getCerts(crtPath, keyPath string) ([]tls.Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return []tls.Certificate{cert}, nil
 }
 
@@ -900,11 +901,13 @@ func getTlsConfig() (*tls.Config, error) {
 		return nil, errors.New("could not append certs from cacert")
 	}
 
-	return &tls.Config{
+	tlsConfig := &tls.Config{
 		RootCAs:      caCertPool,
 		Certificates: certs,
 		ServerName:   "localhost",
-	}, nil
+	}
+	tlsConfig.BuildNameToCertificate()
+	return tlsConfig, nil
 }
 
 func init() {
