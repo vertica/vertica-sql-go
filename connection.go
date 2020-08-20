@@ -83,14 +83,19 @@ func (t *_tlsConfigs)get(name string) (*tls.Config, bool) {
 
 var tlsConfigs = &_tlsConfigs{m : make(map[string]*tls.Config)}
 
+//  RegisterTLSConfig registers a tls configuration to use for a specific tlsmode.
+//  for example:
+//  if err := RegisterTLSConfig("custom", &tls.Config{}); err != nil {}
 //  db, err := sql.Open("vertica", "user@tcp(localhost:3306)/test?tlsmode=custom")
-//  reserved modes: 'server', 'server-strict' or 'none'
-//
-func RegisterTLSConfig(name string, config *tls.Config) error {
-	if name==tlsModeServer || name==tlsModeServerStrict || name==tlsModeNone {
-		return fmt.Errorf("reserved name: %s", name)
+//  There are three reserved modes: 'server', 'server-strict' and 'none'.
+//  Calling RegisterTLSConfig with one of these as the first argument will return an
+//  error
+//  This method is thread-safe.
+func RegisterTLSConfig(tlsMode string, config *tls.Config) error {
+	if tlsMode ==tlsModeServer || tlsMode ==tlsModeServerStrict || tlsMode ==tlsModeNone {
+		return fmt.Errorf("reserved tlsMode: %s", tlsMode)
 	}
-	return tlsConfigs.add(name, config)
+	return tlsConfigs.add(tlsMode, config)
 }
 
 // Connection represents a connection to Vertica
