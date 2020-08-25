@@ -312,6 +312,66 @@ func TestBasicArgsQuery(t *testing.T) {
 	assertNoErr(t, rows.Close())
 }
 
+func TestBasicArgsWithNil(t *testing.T) {
+	connDB := openConnection(t, "test_basic_args_query_pre")
+	defer closeConnection(t, connDB, "test_basic_args_query_post")
+	var id int
+	var name sql.NullString
+
+	//-----------------------------------------------------------------------------------------
+	// Ensure we can insert naked null values.
+	//-----------------------------------------------------------------------------------------
+	_, err := connDB.ExecContext(ctx, "INSERT INTO MyTable VALUES (?, ?, ?, ?, ?)", 13, nil, true, 123.45, time.Now())
+	assertNoErr(t, err)
+
+	err = connDB.QueryRowContext(ctx, "SELECT id, name FROM MyTable WHERE name is null").Scan(&id, &name)
+	assertNoErr(t, err)
+	assertEqual(t, id, 13)
+	assertEqual(t, name.Valid, false)
+
+	//-----------------------------------------------------------------------------------------
+	// Ensure we can insert null pointers
+	//-----------------------------------------------------------------------------------------
+	var nullStr *string
+	_, err = connDB.ExecContext(ctx, "INSERT INTO MyTable VALUES (?, ?, ?, ?, ?)", 14, nullStr, true, 456.78, time.Now())
+	assertNoErr(t, err)
+
+	err = connDB.QueryRowContext(ctx, "SELECT id, name FROM MyTable WHERE id=?", 14).Scan(&id, &name)
+	assertNoErr(t, err)
+	assertEqual(t, id, 14)
+	assertEqual(t, name.Valid, false)
+
+	// -----------------------------------------------------------------------------------------
+	// Ensure we can insert NullString with value
+	// -----------------------------------------------------------------------------------------
+	var someStr = sql.NullString{
+		Valid:  true,
+		String: "hello",
+	}
+	_, err = connDB.ExecContext(ctx, "INSERT INTO MyTable VALUES (?, ?, ?, ?, ?)", 15, someStr, true, 456.78, time.Now())
+	assertNoErr(t, err)
+
+	err = connDB.QueryRowContext(ctx, "SELECT id, name FROM MyTable WHERE id=?", 15).Scan(&id, &name)
+	assertNoErr(t, err)
+	assertEqual(t, id, 15)
+	assertEqual(t, name.String, "hello")
+
+	// -----------------------------------------------------------------------------------------
+	// Ensure we can insert NullString without value
+	// -----------------------------------------------------------------------------------------
+	var emptyStr = sql.NullString{
+		Valid:  false,
+		String: "",
+	}
+	_, err = connDB.ExecContext(ctx, "INSERT INTO MyTable VALUES (?, ?, ?, ?, ?)", 16, emptyStr, true, 456.78, time.Now())
+	assertNoErr(t, err)
+
+	err = connDB.QueryRowContext(ctx, "SELECT id, name FROM MyTable WHERE id=?", 16).Scan(&id, &name)
+	assertNoErr(t, err)
+	assertEqual(t, id, 16)
+	assertEqual(t, name.Valid, false)
+}
+
 func TestTransaction(t *testing.T) {
 	connDB := openConnection(t, "test_transaction_pre")
 	defer closeConnection(t, connDB, "test_transaction_post")
