@@ -109,3 +109,39 @@ func BenchmarkRowsWithLimit(b *testing.B) {
 		}
 	}
 }
+
+func TestTimestamp(t *testing.T) {
+	result := make([]driver.Value, 1)
+	vCtx := NewVerticaContext(context.Background())
+
+	cols := make([]*msgs.BERowDescColumnDef, 1)
+	cols[0] = &msgs.BERowDescColumnDef{FieldName: "a", AttribNum: 1, DataTypeOID: 13, DataTypeName: "timestamptz", Length: -1}
+	colDef := &msgs.BERowDescMsg{Columns: cols}
+
+	var msgType msgs.BEDataRowMsg
+	rows := newRows(vCtx, colDef, "")
+	row1 := bytes.NewBuffer(make([]byte, 0, 30))
+	binary.Write(row1, binary.BigEndian, int16(1))
+	binary.Write(row1, binary.BigEndian, int32(29))
+	binary.Write(row1, binary.BigEndian, []byte("2020-01-02 15:04:05.000000-07"))
+	row2 := bytes.NewBuffer(make([]byte, 0, 30))
+	binary.Write(row2, binary.BigEndian, int16(1))
+	binary.Write(row2, binary.BigEndian, int32(22))
+	binary.Write(row2, binary.BigEndian, []byte("2020-01-02 15:04:05+07"))
+	row3 := bytes.NewBuffer(make([]byte, 0, 30))
+	binary.Write(row3, binary.BigEndian, int16(1))
+	binary.Write(row3, binary.BigEndian, int32(25))
+	binary.Write(row3, binary.BigEndian, []byte("2020-01-02 05:04:05+07:30"))
+	rowI1, _ := msgType.CreateFromMsgBody(msgs.NewMsgBufferFromBytes(row1.Bytes()))
+	rowI2, _ := msgType.CreateFromMsgBody(msgs.NewMsgBufferFromBytes(row2.Bytes()))
+	rowI3, _ := msgType.CreateFromMsgBody(msgs.NewMsgBufferFromBytes(row3.Bytes()))
+	rows.addRow(rowI1.(*msgs.BEDataRowMsg))
+	rows.addRow(rowI2.(*msgs.BEDataRowMsg))
+	rows.addRow(rowI3.(*msgs.BEDataRowMsg))
+	for i := 0; i < 3; i++ {
+		err := rows.Next(result)
+		if err != nil {
+			t.Errorf("Received error from timestamp parser: %v, row=%v", err, i)
+		}
+	}
+}
