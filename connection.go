@@ -93,6 +93,8 @@ func (v *connection) BeginTx(ctx context.Context, opts driver.TxOptions) (driver
 func (v *connection) Close() error {
 	connectionLogger.Trace("connection.Close()")
 
+	v.sendMessage(&msgs.FETerminateMsg{})
+
 	var result error = nil
 
 	if v.conn != nil {
