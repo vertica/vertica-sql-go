@@ -37,6 +37,7 @@ import (
 	"database/sql/driver"
 	"encoding/hex"
 	"io"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -132,17 +133,22 @@ func parseTimestampTZColumn(fullString string) (driver.Value, error) {
 	var result driver.Value
 	var err error
 
-	if strings.IndexByte(fullString, '.') != -1 {
-		neededPadding := 29 - len(fullString)
-		if neededPadding > 0 {
-			fullString = fullString[0:26-neededPadding] + paddingString[0:neededPadding] + fullString[len(fullString)-3:]
-		}
-		result, err = time.Parse("2006-01-02 15:04:05.000000-07", fullString)
-	} else if strings.Count(fullString, ":") == 3 {
-		result, err = time.Parse("2006-01-02 15:04:05-07:00", fullString)
-	} else {
-		result, err = time.Parse("2006-01-02 15:04:05-07", fullString)
+	endsWithHalfHour, _ := regexp.Compile(".*:\\d{2}$")
+	if !endsWithHalfHour.MatchString(fullString) {
+		fullString = fullString + ":00"
 	}
+
+	// ensures ms are included with the desired length
+	if strings.IndexByte(fullString, '.') == 19 {
+		neededPadding := 32 - len(fullString)
+		if neededPadding > 0 {
+			fullString = fullString[0:26-neededPadding] + paddingString[0:neededPadding] + fullString[26-neededPadding:]
+		}
+	} else {
+		fullString = fullString[0:19] + "." + paddingString[0:6] + fullString[19:]
+	}
+
+	result, err = time.Parse("2006-01-02 15:04:05.000000-07:00", fullString)
 
 	return result, err
 }
