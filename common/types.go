@@ -40,8 +40,13 @@ const (
 	ColTypeFloat64       uint32 = 7
 	ColTypeChar          uint32 = 8
 	ColTypeVarChar       uint32 = 9
+	ColTypeDate          uint32 = 10
+	ColTypeTime          uint32 = 11
 	ColTypeTimestamp     uint32 = 12
 	ColTypeTimestampTZ   uint32 = 13
+	ColTypeInterval      uint32 = 14
+	ColTypeIntervalYM    uint32 = 114
+	ColTypeTimeTZ        uint32 = 15
 	ColTypeNumeric       uint32 = 16
 	ColTypeVarBinary     uint32 = 17
 	ColTypeUUID          uint32 = 20
@@ -77,10 +82,22 @@ func ColumnTypeString(typeOID uint32) string {
 		return "char"
 	case ColTypeVarChar:
 		return "varchar"
+	case ColTypeDate:
+		return "date"
+	case ColTypeTime:
+		return "time"
 	case ColTypeTimestamp:
 		return "timestamp"
 	case ColTypeTimestampTZ:
 		return "timestamptz"
+	case ColTypeInterval:
+		return "interval"
+	case ColTypeIntervalYM:
+		return "intervalym"
+	case ColTypeTimeTZ:
+		return "timetz"
+	case ColTypeNumeric:
+		return "numeric"
 	case ColTypeVarBinary:
 		return "varbinary"
 	case ColTypeUUID:
@@ -91,8 +108,6 @@ func ColumnTypeString(typeOID uint32) string {
 		return "long varbinary"
 	case ColTypeBinary:
 		return "binary"
-	case ColTypeNumeric:
-		return "numeric"
 	}
 
 	return fmt.Sprintf("unknown column type oid: %d", typeOID)
