@@ -111,10 +111,18 @@ func (r *rows) Next(dest []driver.Value) error {
 			dest[idx] = string(colVal)
 		case common.ColTypeFloat64, common.ColTypeNumeric: // to float64
 			dest[idx], err = strconv.ParseFloat(string(colVal), 64)
+		case common.ColTypeDate: // to time.Time from YYYY-MM-DD
+			dest[idx], err = parseDateColumn(string(colVal))
 		case common.ColTypeTimestamp: // to time.Time from YYYY-MM-DD hh:mm:ss
 			dest[idx], err = parseTimestampTZColumn(string(colVal) + r.tzOffset)
 		case common.ColTypeTimestampTZ:
 			dest[idx], err = parseTimestampTZColumn(string(colVal))
+		case common.ColTypeTime: // to time.Time from hh:mm:ss.[fff...]
+			dest[idx], err = parseTimestampTZColumn("0000-01-01 " + string(colVal) + r.tzOffset)
+		case common.ColTypeTimeTZ:
+			dest[idx], err = parseTimestampTZColumn("0000-01-01 " + string(colVal))
+		case common.ColTypeInterval, common.ColTypeIntervalYM: // stays string
+			dest[idx] = string(colVal)
 		case common.ColTypeVarBinary, common.ColTypeLongVarBinary, common.ColTypeBinary: // to []byte - this one's easy
 			dest[idx] = hex.EncodeToString(colVal)
 		default:
@@ -127,6 +135,24 @@ func (r *rows) Next(dest []driver.Value) error {
 	}
 
 	return err
+}
+
+func parseDateColumn(fullString string) (driver.Value, error) {
+	var result driver.Value
+	var err error
+
+	// Dates Before Christ (YYYY-MM-DD BC) are special
+	if strings.HasSuffix(fullString, " BC") {
+		var t time.Time
+		t, err = time.Parse("2006-01-02 BC", fullString)
+		if err != nil {
+			return time.Time{}, err
+		}
+		result = t.AddDate(-2*t.Year(), 0, 0)
+	} else {
+		result, err = time.Parse("2006-01-02", fullString)
+	}
+	return result, err
 }
 
 func parseTimestampTZColumn(fullString string) (driver.Value, error) {
