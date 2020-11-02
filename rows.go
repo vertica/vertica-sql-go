@@ -36,6 +36,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"regexp"
 	"strconv"
@@ -158,6 +159,16 @@ func parseDateColumn(fullString string) (driver.Value, error) {
 func parseTimestampTZColumn(fullString string) (driver.Value, error) {
 	var result driver.Value
 	var err error
+	var isBC bool
+
+	// +infinity or -infinity value
+	if strings.Contains(fullString, "infinity") {
+		return time.Time{}, fmt.Errorf("cannot parse an infinity timestamp to time.Time")
+	}
+
+	if isBC = strings.Contains(fullString, " BC"); isBC {
+		fullString = strings.ReplaceAll(fullString, " BC", "")
+	}
 
 	endsWithHalfHour, _ := regexp.Compile(".*:\\d{2}$")
 	if !endsWithHalfHour.MatchString(fullString) {
@@ -174,7 +185,11 @@ func parseTimestampTZColumn(fullString string) (driver.Value, error) {
 		fullString = fullString[0:19] + "." + paddingString[0:6] + fullString[19:]
 	}
 
+	// Note: The date/time output format for the current session (sql=> SHOW DATESTYLE) should be 'ISO'
 	result, err = time.Parse("2006-01-02 15:04:05.000000-07:00", fullString)
+	if isBC {
+		result = result.(time.Time).AddDate(-2*result.(time.Time).Year(), 0, 0)
+	}
 
 	return result, err
 }
