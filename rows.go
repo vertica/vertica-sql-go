@@ -167,7 +167,7 @@ func parseTimestampTZColumn(fullString string) (driver.Value, error) {
 	}
 
 	if isBC = strings.Contains(fullString, " BC"); isBC {
-		fullString = strings.ReplaceAll(fullString, " BC", "")
+		fullString = strings.Replace(fullString, " BC", "", -1)
 	}
 
 	endsWithHalfHour, _ := regexp.Compile(".*:\\d{2}$")

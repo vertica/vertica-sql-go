@@ -543,7 +543,7 @@ func TestValueTypes(t *testing.T) {
 	assertEqual(t, varCharVal, "test values")
 	assertEqual(t, dateVal.String()[0:10], "1999-01-08")
 	assertEqual(t, timestampVal.String()[0:26], "2019-08-04 00:45:19.843913")
-	assertEqual(t, timestampTZVal.String()[0:32], "2019-08-04 00:45:19.843913 -0400")
+	assertEqual(t, timestampTZVal.UTC().String()[0:32], "2019-08-04 04:45:19.843913 +0000")
 	assertEqual(t, intervalVal, "-6537150 01:03:06.0051")
 	assertEqual(t, intervalYMVal, "1-2")
 	assertEqual(t, timeVal.String()[11:23], "04:05:06.789")
