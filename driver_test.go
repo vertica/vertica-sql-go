@@ -456,6 +456,16 @@ func TestSHA512Authentication(t *testing.T) {
 	testAnAuthScheme(t, "SHA512")
 }
 
+func TestDateParsers(t *testing.T) {
+	val, err := parseDateColumn("2018-02-01")
+	assertNoErr(t, err)
+	assertEqual(t, fmt.Sprintf("%s", val)[0:10], "2018-02-01")
+
+	val, err = parseDateColumn("2018-02-01 BC")
+	assertNoErr(t, err)
+	assertEqual(t, fmt.Sprintf("%s", val)[0:11], "-2018-02-01")
+}
+
 func TestTimestampParsers(t *testing.T) {
 	val, err := parseTimestampTZColumn("2018-02-01 21:09:33.1234+00")
 	assertNoErr(t, err)
@@ -472,6 +482,14 @@ func TestTimestampParsers(t *testing.T) {
 	val, err = parseTimestampTZColumn("2018-01-27 21:09:44+00")
 	assertNoErr(t, err)
 	assertEqual(t, fmt.Sprintf("%s", val)[0:25], "2018-01-27 21:09:44 +0000")
+
+	val, err = parseTimestampTZColumn("2018-01-27 21:09:44+10 BC")
+	assertNoErr(t, err)
+	assertEqual(t, fmt.Sprintf("%s", val)[0:26], "-2018-01-27 21:09:44 +1000")
+
+	val, err = parseTimestampTZColumn("2018-01-27 21:09:44.843913 BC-04")
+	assertNoErr(t, err)
+	assertEqual(t, fmt.Sprintf("%s", val)[0:33], "-2018-01-27 21:09:44.843913 -0400")
 }
 
 func TestEmptyStatementError(t *testing.T) {
@@ -497,8 +515,13 @@ func TestValueTypes(t *testing.T) {
 		floatVal       float64
 		charVal        string
 		varCharVal     string
-		timestampVal   string
-		timestampTZVal string
+		dateVal        time.Time
+		timestampVal   time.Time
+		timestampTZVal time.Time
+		intervalVal    string
+		intervalYMVal  string
+		timeVal        time.Time
+		timeTZVal      time.Time
 		varBinVal      string
 		uuidVal        string
 		lVarCharVal    string
@@ -510,13 +533,21 @@ func TestValueTypes(t *testing.T) {
 	rows, err := connDB.QueryContext(ctx, "SELECT * FROM full_type_table")
 	assertNoErr(t, err)
 	assertNext(t, rows)
-	assertNoErr(t, rows.Scan(&boolVal, &intVal, &floatVal, &charVal, &varCharVal, &timestampVal, &timestampTZVal,
+	assertNoErr(t, rows.Scan(&boolVal, &intVal, &floatVal, &charVal, &varCharVal, &dateVal,
+		&timestampVal, &timestampTZVal, &intervalVal, &intervalYMVal, &timeVal, &timeTZVal,
 		&varBinVal, &uuidVal, &lVarCharVal, &lVarBinaryVal, &binaryVal, &numericVal))
 	assertEqual(t, boolVal, true)
 	assertEqual(t, intVal, 123)
 	assertEqual(t, floatVal, 3.141)
 	assertEqual(t, charVal, "a")
 	assertEqual(t, varCharVal, "test values")
+	assertEqual(t, dateVal.String()[0:10], "1999-01-08")
+	assertEqual(t, timestampVal.String()[0:26], "2019-08-04 00:45:19.843913")
+	assertEqual(t, timestampTZVal.UTC().String()[0:32], "2019-08-04 04:45:19.843913 +0000")
+	assertEqual(t, intervalVal, "-6537150 01:03:06.0051")
+	assertEqual(t, intervalYMVal, "1-2")
+	assertEqual(t, timeVal.String()[11:23], "04:05:06.789")
+	assertEqual(t, timeTZVal.String()[11:25], "16:05:06 -0800")
 	assertEqual(t, varBinVal, "5c3237365c3335375c3333365c323535")
 	assertEqual(t, uuidVal, "372fd680-6a72-4003-96b0-10bbe78cd635")
 	assertEqual(t, lVarCharVal, "longer var char")
@@ -532,8 +563,13 @@ func TestValueTypes(t *testing.T) {
 		nullFloatVal       sql.NullFloat64
 		nullCharVal        sql.NullString
 		nullVarCharVal     sql.NullString
-		nullTimestampVal   sql.NullString
-		nullTimestampTZVal sql.NullString
+		nullDateVal        sql.NullTime
+		nullTimestampVal   sql.NullTime
+		nullTimestampTZVal sql.NullTime
+		nullIntervalVal    sql.NullString
+		nullIntervalYMVal  sql.NullString
+		nullTimeVal        sql.NullTime
+		nullTimeTZVal      sql.NullTime
 		nullVarBinVal      sql.NullString
 		nullUuidVal        sql.NullString
 		nullLVarCharVal    sql.NullString
@@ -543,16 +579,22 @@ func TestValueTypes(t *testing.T) {
 	)
 
 	assertNoErr(t, rows.Scan(&nullBoolVal, &nullIntVal, &nullFloatVal, &nullCharVal,
-		&nullVarCharVal, &nullTimestampVal, &nullTimestampTZVal, &nullVarBinVal, &nullUuidVal,
-		&nullLVarCharVal, &nullLVarBinaryVal, &nullBinaryVal, &nullNumericVal))
+		&nullVarCharVal, &nullDateVal, &nullTimestampVal, &nullTimestampTZVal,
+		&nullIntervalVal, &nullIntervalYMVal, &nullTimeVal, &nullTimeTZVal, &nullVarBinVal,
+		&nullUuidVal, &nullLVarCharVal, &nullLVarBinaryVal, &nullBinaryVal, &nullNumericVal))
 
 	assertTrue(t, !nullBoolVal.Valid)
 	assertTrue(t, !nullIntVal.Valid)
 	assertTrue(t, !nullFloatVal.Valid)
 	assertTrue(t, !nullCharVal.Valid)
 	assertTrue(t, !nullVarCharVal.Valid)
+	assertTrue(t, !nullDateVal.Valid)
 	assertTrue(t, !nullTimestampVal.Valid)
 	assertTrue(t, !nullTimestampTZVal.Valid)
+	assertTrue(t, !nullIntervalVal.Valid)
+	assertTrue(t, !nullIntervalYMVal.Valid)
+	assertTrue(t, !nullTimeVal.Valid)
+	assertTrue(t, !nullTimeTZVal.Valid)
 	assertTrue(t, !nullVarBinVal.Valid)
 	assertTrue(t, !nullUuidVal.Valid)
 	assertTrue(t, !nullLVarCharVal.Valid)
