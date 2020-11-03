@@ -8,7 +8,7 @@ vertica-sql-go is a native Go adapter for the Vertica (http://www.vertica.com) d
 
 Please check out [release notes](https://github.com/vertica/vertica-sql-go/releases) to learn about the latest improvements.
 
-vertica-sql-go has been tested with Vertica 9.2.0+ and Go 1.11.2.
+vertica-sql-go has been tested with Vertica 10.0.1 and Go 1.13/1.14/1.15.
 
 ## Installation
 
