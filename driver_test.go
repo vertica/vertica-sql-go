@@ -602,6 +602,51 @@ func TestValueTypes(t *testing.T) {
 	assertTrue(t, !nullBinaryVal.Valid)
 	assertTrue(t, !nullNumericVal.Valid)
 
+	var columns = []struct {
+		name             string
+		databaseTypeName string
+		nullable         bool
+	}{
+		{"boolVal", "BOOL", true},
+		{"intVal", "INT", true},
+		{"floatVal", "FLOAT", true},
+		{"charVal", "CHAR", true},
+		{"varCharVal", "VARCHAR", true},
+		{"dateVal", "DATE", true},
+		{"timestampVal", "TIMESTAMP", true},
+		{"timestampTZVal", "TIMESTAMPTZ", true},
+		{"intervalVal", "INTERVAL", true},
+		{"intervalYMVal", "INTERVALYM", true},
+		{"timeVal", "TIME", true},
+		{"timeTZVal", "TIMETZ", true},
+		{"varBinVal", "VARBINARY", true},
+		{"uuidVal", "UUID", true},
+		{"lVarCharVal", "LONG VARCHAR", true},
+		{"lVarBinaryVal", "LONG VARBINARY", true},
+		{"binaryVal", "BINARY", true},
+		{"numericVal", "NUMERIC", true},
+	}
+
+	// Read column types
+	colTypes, err := rows.ColumnTypes()
+	assertNoErr(t, err)
+	for i, column := range colTypes {
+		col := columns[i]
+
+		// Name
+		name := column.Name()
+		assertEqual(t, name, col.name)
+
+		// DatabaseTypeName
+		databaseTypeName := column.DatabaseTypeName()
+		assertEqual(t, databaseTypeName, col.databaseTypeName)
+
+		//Nullable
+		nullable, ok := column.Nullable()
+		assertTrue(t, ok)
+		assertEqual(t, nullable, col.nullable)
+	}
+
 	assertNoErr(t, rows.Close())
 }
 

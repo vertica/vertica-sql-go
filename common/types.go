@@ -73,41 +73,41 @@ type ParameterType struct {
 func ColumnTypeString(typeOID uint32) string {
 	switch typeOID {
 	case ColTypeBoolean:
-		return "boolean"
+		return "BOOL"
 	case ColTypeInt64:
-		return "integer"
+		return "INT"
 	case ColTypeFloat64:
-		return "float"
+		return "FLOAT"
 	case ColTypeChar:
-		return "char"
+		return "CHAR"
 	case ColTypeVarChar:
-		return "varchar"
+		return "VARCHAR"
 	case ColTypeDate:
-		return "date"
+		return "DATE"
 	case ColTypeTime:
-		return "time"
+		return "TIME"
 	case ColTypeTimestamp:
-		return "timestamp"
+		return "TIMESTAMP"
 	case ColTypeTimestampTZ:
-		return "timestamptz"
+		return "TIMESTAMPTZ"
 	case ColTypeInterval:
-		return "interval"
+		return "INTERVAL"
 	case ColTypeIntervalYM:
-		return "intervalym"
+		return "INTERVALYM"
 	case ColTypeTimeTZ:
-		return "timetz"
+		return "TIMETZ"
 	case ColTypeNumeric:
-		return "numeric"
+		return "NUMERIC"
 	case ColTypeVarBinary:
-		return "varbinary"
+		return "VARBINARY"
 	case ColTypeUUID:
-		return "uuid"
+		return "UUID"
 	case ColTypeLongVarChar:
-		return "long varchar"
+		return "LONG VARCHAR"
 	case ColTypeLongVarBinary:
-		return "long varbinary"
+		return "LONG VARBINARY"
 	case ColTypeBinary:
-		return "binary"
+		return "BINARY"
 	}
 
 	return fmt.Sprintf("unknown column type oid: %d", typeOID)
