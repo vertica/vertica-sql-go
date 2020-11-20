@@ -232,6 +232,19 @@ func newRows(ctx context.Context, columnsDefsMsg *msgs.BERowDescMsg, tzOffset st
 	return res
 }
 
+// Returns the database system type name without the length. Type names should be uppercase.
+// Interface: driver.RowsColumnTypeDatabaseTypeName
+func (r *rows) ColumnTypeDatabaseTypeName(index int) string {
+	return r.columnDefs.Columns[index].DataTypeName
+}
+
+// The nullable value should be true if it is known the column may be null, or false if the column
+// is known to be not nullable. The ok value should always be true as column nullability is known.
+// Interface: driver.RowsColumnTypeNullable
+func (r *rows) ColumnTypeNullable(index int) (nullable, ok bool) {
+	return r.columnDefs.Columns[index].Nullable, true
+}
+
 func newEmptyRows() *rows {
 	cdf := make([]*msgs.BERowDescColumnDef, 0)
 	be := &msgs.BERowDescMsg{Columns: cdf}
