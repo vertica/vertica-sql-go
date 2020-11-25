@@ -606,25 +606,30 @@ func TestValueTypes(t *testing.T) {
 		name             string
 		databaseTypeName string
 		nullable         bool
+		length           int64
+		lengthOk         bool
+		precision        int64
+		scale            int64
+		decimalSizeOk    bool
 	}{
-		{"boolVal", "BOOL", true},
-		{"intVal", "INT", true},
-		{"floatVal", "FLOAT", true},
-		{"charVal", "CHAR", true},
-		{"varCharVal", "VARCHAR", true},
-		{"dateVal", "DATE", true},
-		{"timestampVal", "TIMESTAMP", true},
-		{"timestampTZVal", "TIMESTAMPTZ", true},
-		{"intervalVal", "INTERVAL", true},
-		{"intervalYMVal", "INTERVALYM", true},
-		{"timeVal", "TIME", true},
-		{"timeTZVal", "TIMETZ", true},
-		{"varBinVal", "VARBINARY", true},
-		{"uuidVal", "UUID", true},
-		{"lVarCharVal", "LONG VARCHAR", true},
-		{"lVarBinaryVal", "LONG VARBINARY", true},
-		{"binaryVal", "BINARY", true},
-		{"numericVal", "NUMERIC", true},
+		{"boolVal", "BOOL", true, 1, false, 0, 0, false},
+		{"intVal", "INT", true, 8, false, 0, 0, false},
+		{"floatVal", "FLOAT", true, 8, false, 0, 0, false},
+		{"charVal", "CHAR", true, 1, true, 0, 0, false},
+		{"varCharVal", "VARCHAR", true, 128, true, 0, 0, false},
+		{"dateVal", "DATE", true, 8, false, 0, 0, false},
+		{"timestampVal", "TIMESTAMP", true, 8, false, 6, 0, true},
+		{"timestampTZVal", "TIMESTAMPTZ", true, 8, false, 6, 0, true},
+		{"intervalVal", "INTERVAL", true, 8, false, 4, 0, true},
+		{"intervalYMVal", "INTERVALYM", true, 8, false, 0, 0, true},
+		{"timeVal", "TIME", true, 8, false, 6, 0, true},
+		{"timeTZVal", "TIMETZ", true, 8, false, 6, 0, true},
+		{"varBinVal", "VARBINARY", true, 80, true, 0, 0, false},
+		{"uuidVal", "UUID", true, 16, false, 0, 0, false},
+		{"lVarCharVal", "LONG VARCHAR", true, 65536, true, 0, 0, false},
+		{"lVarBinaryVal", "LONG VARBINARY", true, 65536, true, 0, 0, false},
+		{"binaryVal", "BINARY", true, 1, true, 0, 0, false},
+		{"numericVal", "NUMERIC", true, 24, true, 40, 18, true},
 	}
 
 	// Read column types
@@ -641,10 +646,21 @@ func TestValueTypes(t *testing.T) {
 		databaseTypeName := column.DatabaseTypeName()
 		assertEqual(t, databaseTypeName, col.databaseTypeName)
 
-		//Nullable
+		// Nullable
 		nullable, ok := column.Nullable()
 		assertTrue(t, ok)
 		assertEqual(t, nullable, col.nullable)
+
+		// Length
+		length, isVariable := column.Length()
+		assertEqual(t, length, col.length)
+		assertEqual(t, isVariable, col.lengthOk)
+
+		// Precision and scale
+		precision, scale, decimalSizeOk := column.DecimalSize()
+		assertEqual(t, precision, col.precision)
+		assertEqual(t, scale, col.scale)
+		assertEqual(t, decimalSizeOk, col.decimalSizeOk)
 	}
 
 	assertNoErr(t, rows.Close())
