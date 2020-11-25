@@ -245,6 +245,68 @@ func (r *rows) ColumnTypeNullable(index int) (nullable, ok bool) {
 	return r.columnDefs.Columns[index].Nullable, true
 }
 
+// Returns the precision and scale for column types. If not applicable, ok should be false.
+// Interface: driver.RowsColumnTypePrecisionScale
+func (r *rows) ColumnTypePrecisionScale(index int) (precision, scale int64, ok bool) {
+	// The type modifier of -1 is used when the size of a type is unknown.
+	// In those cases we assume the maximum possible size.
+	var typeMod = int64(r.columnDefs.Columns[index].DataTypeMod)
+	switch r.columnDefs.Columns[index].DataTypeOID {
+	case common.ColTypeNumeric:
+		// For numerics, precision is the total number of digits (in base 10) that can fit in the type
+		if typeMod == -1 {
+			return 1024, 15, true
+		} else {
+			precision := ((typeMod - 4) >> 16) & 0xFFFF
+			scale := (typeMod - 4) & 0xFF
+			return precision, scale, true
+		}
+	case common.ColTypeTime, common.ColTypeTimeTZ, common.ColTypeTimestamp,
+		common.ColTypeTimestampTZ, common.ColTypeInterval, common.ColTypeIntervalYM:
+		// For intervals, time and timestamps, precision is the number of digits to the
+		// right of the decimal point in the seconds portion of the time.
+		if typeMod == -1 {
+			return 6, 0, true
+		} else {
+			return typeMod & 0xF, 0, true
+		}
+	default:
+		return 0, 0, false
+	}
+}
+
+// Returns the length of the column type. If the column is not a variable length type ok should
+// return false.
+// Interface: driver.RowsColumnTypeLength
+func (r *rows) ColumnTypeLength(index int) (length int64, ok bool) {
+	var typeMod = int64(r.columnDefs.Columns[index].DataTypeMod)
+	switch r.columnDefs.Columns[index].DataTypeOID {
+	case common.ColTypeBoolean, common.ColTypeInt64, common.ColTypeFloat64,
+		common.ColTypeDate, common.ColTypeTimestamp, common.ColTypeTimestampTZ,
+		common.ColTypeTime, common.ColTypeTimeTZ, common.ColTypeInterval,
+		common.ColTypeIntervalYM, common.ColTypeUUID:
+		return int64(r.columnDefs.Columns[index].Length), false
+	case common.ColTypeChar, common.ColTypeVarChar,
+		common.ColTypeBinary, common.ColTypeVarBinary:
+		if typeMod == -1 {
+			return 65000, true
+		} else {
+			return typeMod - 4, true
+		}
+	case common.ColTypeLongVarChar, common.ColTypeLongVarBinary:
+		if typeMod == -1 {
+			return 32000000, true
+		} else {
+			return typeMod - 4, true
+		}
+	case common.ColTypeNumeric:
+		precision, _, _ := r.ColumnTypePrecisionScale(index)
+		return (precision/19 + 1) * 8, true
+	default:
+		return 0, false
+	}
+}
+
 func newEmptyRows() *rows {
 	cdf := make([]*msgs.BERowDescColumnDef, 0)
 	be := &msgs.BERowDescMsg{Columns: cdf}

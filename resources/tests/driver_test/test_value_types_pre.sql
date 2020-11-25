@@ -20,7 +20,7 @@ uuidVal UUID,
 lVarCharVal LONG VARCHAR(65536),
 lVarBinaryVal LONG VARBINARY(65536),
 binaryVal BINARY,
-numericVal NUMERIC
+numericVal NUMERIC(40,18)
 );
 
 INSERT INTO full_type_table VALUES(
