@@ -510,32 +510,46 @@ func TestValueTypes(t *testing.T) {
 	defer closeConnection(t, connDB, "test_value_types_post")
 
 	var (
-		boolVal        bool
-		intVal         int
-		floatVal       float64
-		charVal        string
-		varCharVal     string
-		dateVal        time.Time
-		timestampVal   time.Time
-		timestampTZVal time.Time
-		intervalVal    string
-		intervalYMVal  string
-		timeVal        time.Time
-		timeTZVal      time.Time
-		varBinVal      string
-		uuidVal        string
-		lVarCharVal    string
-		lVarBinaryVal  string
-		binaryVal      string
-		numericVal     float64
+		boolVal          bool
+		intVal           int
+		floatVal         float64
+		charVal          string
+		varCharVal       string
+		dateVal          time.Time
+		timestampVal     time.Time
+		timestampTZVal   time.Time
+		intervalDayVal   string
+		intervalVal      string
+		intervalHourVal  string
+		intervalHMVal    string
+		intervalHSVal    string
+		intervalMinVal   string
+		intervalMSVal    string
+		intervalSecVal   string
+		intervalDHVal    string
+		intervalDMVal    string
+		intervalYearVal  string
+		intervalYMVal    string
+		intervalMonthVal string
+		timeVal          time.Time
+		timeTZVal        time.Time
+		varBinVal        string
+		uuidVal          string
+		lVarCharVal      string
+		lVarBinaryVal    string
+		binaryVal        string
+		numericVal       float64
 	)
 
 	rows, err := connDB.QueryContext(ctx, "SELECT * FROM full_type_table")
 	assertNoErr(t, err)
 	assertNext(t, rows)
 	assertNoErr(t, rows.Scan(&boolVal, &intVal, &floatVal, &charVal, &varCharVal, &dateVal,
-		&timestampVal, &timestampTZVal, &intervalVal, &intervalYMVal, &timeVal, &timeTZVal,
-		&varBinVal, &uuidVal, &lVarCharVal, &lVarBinaryVal, &binaryVal, &numericVal))
+		&timestampVal, &timestampTZVal, &intervalDayVal, &intervalVal, &intervalHourVal,
+		&intervalHMVal, &intervalHSVal, &intervalMinVal, &intervalMSVal, &intervalSecVal,
+		&intervalDHVal, &intervalDMVal, &intervalYearVal, &intervalYMVal, &intervalMonthVal,
+		&timeVal, &timeTZVal, &varBinVal, &uuidVal, &lVarCharVal, &lVarBinaryVal,
+		&binaryVal, &numericVal))
 	assertEqual(t, boolVal, true)
 	assertEqual(t, intVal, 123)
 	assertEqual(t, floatVal, 3.141)
@@ -544,8 +558,19 @@ func TestValueTypes(t *testing.T) {
 	assertEqual(t, dateVal.String()[0:10], "1999-01-08")
 	assertEqual(t, timestampVal.String()[0:26], "2019-08-04 00:45:19.843913")
 	assertEqual(t, timestampTZVal.UTC().String()[0:32], "2019-08-04 04:45:19.843913 +0000")
+	assertEqual(t, intervalDayVal, "365")
 	assertEqual(t, intervalVal, "-6537150 01:03:06.0051")
+	assertEqual(t, intervalHourVal, "74")
+	assertEqual(t, intervalHMVal, "01:03")
+	assertEqual(t, intervalHSVal, "8760:15:20")
+	assertEqual(t, intervalMinVal, "15")
+	assertEqual(t, intervalMSVal, "525605:20")
+	assertEqual(t, intervalSecVal, "216901.24")
+	assertEqual(t, intervalDHVal, "-2 12")
+	assertEqual(t, intervalDMVal, "-2 12:15")
+	assertEqual(t, intervalYearVal, "1")
 	assertEqual(t, intervalYMVal, "1-2")
+	assertEqual(t, intervalMonthVal, "22")
 	assertEqual(t, timeVal.String()[11:23], "04:05:06.789")
 	assertEqual(t, timeTZVal.String()[11:25], "16:05:06 -0800")
 	assertEqual(t, varBinVal, "5c3237365c3335375c3333365c323535")
@@ -558,30 +583,45 @@ func TestValueTypes(t *testing.T) {
 	assertNext(t, rows)
 
 	var (
-		nullBoolVal        sql.NullBool
-		nullIntVal         sql.NullInt64
-		nullFloatVal       sql.NullFloat64
-		nullCharVal        sql.NullString
-		nullVarCharVal     sql.NullString
-		nullDateVal        sql.NullTime
-		nullTimestampVal   sql.NullTime
-		nullTimestampTZVal sql.NullTime
-		nullIntervalVal    sql.NullString
-		nullIntervalYMVal  sql.NullString
-		nullTimeVal        sql.NullTime
-		nullTimeTZVal      sql.NullTime
-		nullVarBinVal      sql.NullString
-		nullUuidVal        sql.NullString
-		nullLVarCharVal    sql.NullString
-		nullLVarBinaryVal  sql.NullString
-		nullBinaryVal      sql.NullString
-		nullNumericVal     sql.NullFloat64
+		nullBoolVal          sql.NullBool
+		nullIntVal           sql.NullInt64
+		nullFloatVal         sql.NullFloat64
+		nullCharVal          sql.NullString
+		nullVarCharVal       sql.NullString
+		nullDateVal          sql.NullTime
+		nullTimestampVal     sql.NullTime
+		nullTimestampTZVal   sql.NullTime
+		nullIntervalDayVal   sql.NullString
+		nullIntervalVal      sql.NullString
+		nullIntervalHourVal  sql.NullString
+		nullIntervalHMVal    sql.NullString
+		nullIntervalHSVal    sql.NullString
+		nullIntervalMinVal   sql.NullString
+		nullIntervalMSVal    sql.NullString
+		nullIntervalSecVal   sql.NullString
+		nullIntervalDHVal    sql.NullString
+		nullIntervalDMVal    sql.NullString
+		nullIntervalYearVal  sql.NullString
+		nullIntervalYMVal    sql.NullString
+		nullIntervalMonthVal sql.NullString
+		nullTimeVal          sql.NullTime
+		nullTimeTZVal        sql.NullTime
+		nullVarBinVal        sql.NullString
+		nullUuidVal          sql.NullString
+		nullLVarCharVal      sql.NullString
+		nullLVarBinaryVal    sql.NullString
+		nullBinaryVal        sql.NullString
+		nullNumericVal       sql.NullFloat64
 	)
 
 	assertNoErr(t, rows.Scan(&nullBoolVal, &nullIntVal, &nullFloatVal, &nullCharVal,
 		&nullVarCharVal, &nullDateVal, &nullTimestampVal, &nullTimestampTZVal,
-		&nullIntervalVal, &nullIntervalYMVal, &nullTimeVal, &nullTimeTZVal, &nullVarBinVal,
-		&nullUuidVal, &nullLVarCharVal, &nullLVarBinaryVal, &nullBinaryVal, &nullNumericVal))
+		&nullIntervalDayVal, &nullIntervalVal, &nullIntervalHourVal, &nullIntervalHMVal,
+		&nullIntervalHSVal, &nullIntervalMinVal, &nullIntervalMSVal,
+		&nullIntervalSecVal, &nullIntervalDHVal, &nullIntervalDMVal,
+		&nullIntervalYearVal, &nullIntervalYMVal, &nullIntervalMonthVal,
+		&nullTimeVal, &nullTimeTZVal, &nullVarBinVal, &nullUuidVal,
+		&nullLVarCharVal, &nullLVarBinaryVal, &nullBinaryVal, &nullNumericVal))
 
 	assertTrue(t, !nullBoolVal.Valid)
 	assertTrue(t, !nullIntVal.Valid)
@@ -591,8 +631,19 @@ func TestValueTypes(t *testing.T) {
 	assertTrue(t, !nullDateVal.Valid)
 	assertTrue(t, !nullTimestampVal.Valid)
 	assertTrue(t, !nullTimestampTZVal.Valid)
+	assertTrue(t, !nullIntervalDayVal.Valid)
 	assertTrue(t, !nullIntervalVal.Valid)
+	assertTrue(t, !nullIntervalHourVal.Valid)
+	assertTrue(t, !nullIntervalHMVal.Valid)
+	assertTrue(t, !nullIntervalHSVal.Valid)
+	assertTrue(t, !nullIntervalMinVal.Valid)
+	assertTrue(t, !nullIntervalMSVal.Valid)
+	assertTrue(t, !nullIntervalSecVal.Valid)
+	assertTrue(t, !nullIntervalDHVal.Valid)
+	assertTrue(t, !nullIntervalDMVal.Valid)
+	assertTrue(t, !nullIntervalYearVal.Valid)
 	assertTrue(t, !nullIntervalYMVal.Valid)
+	assertTrue(t, !nullIntervalMonthVal.Valid)
 	assertTrue(t, !nullTimeVal.Valid)
 	assertTrue(t, !nullTimeTZVal.Valid)
 	assertTrue(t, !nullVarBinVal.Valid)
@@ -620,8 +671,19 @@ func TestValueTypes(t *testing.T) {
 		{"dateVal", "DATE", true, 8, false, 0, 0, false},
 		{"timestampVal", "TIMESTAMP", true, 8, false, 6, 0, true},
 		{"timestampTZVal", "TIMESTAMPTZ", true, 8, false, 6, 0, true},
+		{"intervalDayVal", "INTERVAL DAY", true, 8, false, 0, 0, true},
 		{"intervalVal", "INTERVAL DAY TO SECOND", true, 8, false, 4, 0, true},
+		{"intervalHourVal", "INTERVAL HOUR", true, 8, false, 0, 0, true},
+		{"intervalHMVal", "INTERVAL HOUR TO MINUTE", true, 8, false, 0, 0, true},
+		{"intervalHSVal", "INTERVAL HOUR TO SECOND", true, 8, false, 6, 0, true},
+		{"intervalMinVal", "INTERVAL MINUTE", true, 8, false, 0, 0, true},
+		{"intervalMSVal", "INTERVAL MINUTE TO SECOND", true, 8, false, 6, 0, true},
+		{"intervalSecVal", "INTERVAL SECOND", true, 8, false, 2, 0, true},
+		{"intervalDHVal", "INTERVAL DAY TO HOUR", true, 8, false, 0, 0, true},
+		{"intervalDMVal", "INTERVAL DAY TO MINUTE", true, 8, false, 0, 0, true},
+		{"intervalYearVal", "INTERVAL YEAR", true, 8, false, 0, 0, true},
 		{"intervalYMVal", "INTERVAL YEAR TO MONTH", true, 8, false, 0, 0, true},
+		{"intervalMonthVal", "INTERVAL MONTH", true, 8, false, 0, 0, true},
 		{"timeVal", "TIME", true, 8, false, 6, 0, true},
 		{"timeTZVal", "TIMETZ", true, 8, false, 6, 0, true},
 		{"varBinVal", "VARBINARY", true, 80, true, 0, 0, false},
