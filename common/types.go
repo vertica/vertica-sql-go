@@ -70,7 +70,7 @@ type ParameterType struct {
 	Nullable     bool
 }
 
-func ColumnTypeString(typeOID uint32) string {
+func ColumnTypeString(typeOID uint32, typeModifier int32) string {
 	switch typeOID {
 	case ColTypeBoolean:
 		return "BOOL"
@@ -90,10 +90,8 @@ func ColumnTypeString(typeOID uint32) string {
 		return "TIMESTAMP"
 	case ColTypeTimestampTZ:
 		return "TIMESTAMPTZ"
-	case ColTypeInterval:
-		return "INTERVAL"
-	case ColTypeIntervalYM:
-		return "INTERVALYM"
+	case ColTypeInterval, ColTypeIntervalYM:
+		return "INTERVAL " + getIntervalRange(typeOID, typeModifier)
 	case ColTypeTimeTZ:
 		return "TIMETZ"
 	case ColTypeNumeric:
@@ -111,4 +109,65 @@ func ColumnTypeString(typeOID uint32) string {
 	}
 
 	return fmt.Sprintf("unknown column type oid: %d", typeOID)
+}
+
+func getIntervalRange(typeOID uint32, typeModifier int32) string {
+	const (
+		INTERVAL_MASK_MONTH      = 1 << 17
+		INTERVAL_MASK_YEAR       = 1 << 18
+		INTERVAL_MASK_DAY        = 1 << 19
+		INTERVAL_MASK_HOUR       = 1 << 26
+		INTERVAL_MASK_MINUTE     = 1 << 27
+		INTERVAL_MASK_SECOND     = 1 << 28
+		INTERVAL_MASK_YEAR2MONTH = INTERVAL_MASK_YEAR | INTERVAL_MASK_MONTH
+		INTERVAL_MASK_DAY2HOUR   = INTERVAL_MASK_DAY | INTERVAL_MASK_HOUR
+		INTERVAL_MASK_DAY2MIN    = INTERVAL_MASK_DAY | INTERVAL_MASK_HOUR | INTERVAL_MASK_MINUTE
+		INTERVAL_MASK_DAY2SEC    = INTERVAL_MASK_DAY | INTERVAL_MASK_HOUR | INTERVAL_MASK_MINUTE | INTERVAL_MASK_SECOND
+		INTERVAL_MASK_HOUR2MIN   = INTERVAL_MASK_HOUR | INTERVAL_MASK_MINUTE
+		INTERVAL_MASK_HOUR2SEC   = INTERVAL_MASK_HOUR | INTERVAL_MASK_MINUTE | INTERVAL_MASK_SECOND
+		INTERVAL_MASK_MIN2SEC    = INTERVAL_MASK_MINUTE | INTERVAL_MASK_SECOND
+	)
+
+	ranges_ym := []struct {
+		mask int32
+		name string
+	}{
+		{INTERVAL_MASK_YEAR2MONTH, "YEAR TO MONTH"},
+		{INTERVAL_MASK_YEAR, "YEAR"},
+		{INTERVAL_MASK_MONTH, "MONTH"},
+	}
+	ranges_ds := []struct {
+		mask int32
+		name string
+	}{
+		{INTERVAL_MASK_DAY2SEC, "DAY TO SECOND"},
+		{INTERVAL_MASK_DAY2MIN, "DAY TO MINUTE"},
+		{INTERVAL_MASK_DAY2HOUR, "DAY TO HOUR"},
+		{INTERVAL_MASK_DAY, "DAY"},
+		{INTERVAL_MASK_HOUR2SEC, "HOUR TO SECOND"},
+		{INTERVAL_MASK_HOUR2MIN, "HOUR TO MINUTE"},
+		{INTERVAL_MASK_HOUR, "HOUR"},
+		{INTERVAL_MASK_MIN2SEC, "MINUTE TO SECOND"},
+		{INTERVAL_MASK_MINUTE, "MINUTE"},
+		{INTERVAL_MASK_SECOND, "SECOND"},
+	}
+
+	switch typeOID {
+	case ColTypeIntervalYM:
+		for _, val := range ranges_ym {
+			if (typeModifier & val.mask) == val.mask {
+				return val.name
+			}
+		}
+		return "YEAR TO MONTH"
+	case ColTypeInterval:
+		for _, val := range ranges_ds {
+			if (typeModifier & val.mask) == val.mask {
+				return val.name
+			}
+		}
+		return "DAY TO SECOND"
+	default:
+		return fmt.Sprintf("invalid column type oid: %d", typeOID)
+	}
 }

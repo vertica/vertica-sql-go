@@ -79,7 +79,7 @@ func (m *BEParameterDescMsg) CreateFromMsgBody(buf *msgBuffer) (BackEndMsg, erro
 			res.ParameterTypes[i].TypeName = customTypes[typeOIDOrIndex].TypeName
 		} else {
 			res.ParameterTypes[i].TypeOID = typeOIDOrIndex
-			res.ParameterTypes[i].TypeName = common.ColumnTypeString(typeOIDOrIndex)
+			res.ParameterTypes[i].TypeName = common.ColumnTypeString(typeOIDOrIndex, typeModifier)
 		}
 
 		res.ParameterTypes[i].TypeModifier = typeModifier

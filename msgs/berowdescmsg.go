@@ -99,19 +99,19 @@ func (m *BERowDescMsg) CreateFromMsgBody(buf *msgBuffer) (BackEndMsg, error) {
 		isUserType := buf.readBool()
 		dataTypeID := buf.readUint32()
 
-		if isUserType {
-			col.DataTypeOID = userTypes[dataTypeID].BaseTypeOID
-			col.DataTypeName = userTypes[dataTypeID].DataTypeName
-		} else {
-			col.DataTypeOID = dataTypeID
-			col.DataTypeName = common.ColumnTypeString(dataTypeID)
-		}
-
 		col.Length = buf.readInt16()
 		col.Nullable = buf.readInt16() == 1
 		col.IsIdentity = buf.readInt16() == 1
 		col.DataTypeMod = buf.readInt32()
 		col.FormatCode = buf.readUint16()
+
+		if isUserType {
+			col.DataTypeOID = userTypes[dataTypeID].BaseTypeOID
+			col.DataTypeName = userTypes[dataTypeID].DataTypeName
+		} else {
+			col.DataTypeOID = dataTypeID
+			col.DataTypeName = common.ColumnTypeString(dataTypeID, col.DataTypeMod)
+		}
 
 		res.Columns[i] = col
 	}
