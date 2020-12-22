@@ -114,6 +114,12 @@ func TestLexNamed(t *testing.T) {
 			expectedOutput: "select * from whatever where a = ? and b = 'isn'''t",
 		},
 		{
+			name:           "with pre-escaped email string",
+			query:          "insert into table values('fo''o@bar.com', 2020)",
+			expectedNamed:  []string{},
+			expectedOutput: "insert into table values('fo''o@bar.com', 2020)",
+		},
+		{
 			name: "with a comment",
 			query: `select --some select stuff
 			* from whatever where a = @param`,
