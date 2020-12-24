@@ -170,7 +170,7 @@ func lexQuery(l *Lexer) stateFunc {
 			return lexComment
 		}
 
-		if r == '\'' {
+		if r == '\'' && l.peek() != '\'' {
 			return lexString
 		}
 
