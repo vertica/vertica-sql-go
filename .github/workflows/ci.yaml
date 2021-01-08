@@ -27,8 +27,6 @@ jobs:
           docker images
           docker run --hostname vertica-docker --name vertica_docker -d -p 5433:5433 jbfavre/vertica
           sleep 60
-      - name: infos
-        run: go version
       - name: Run tests
         run: |
           go test -race . -args --locator localhost:5433 --user dbadmin
