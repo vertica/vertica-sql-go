@@ -39,6 +39,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -656,6 +657,7 @@ func TestValueTypes(t *testing.T) {
 	var columns = []struct {
 		name             string
 		databaseTypeName string
+		scanType         reflect.Type
 		nullable         bool
 		length           int64
 		lengthOk         bool
@@ -663,35 +665,35 @@ func TestValueTypes(t *testing.T) {
 		scale            int64
 		decimalSizeOk    bool
 	}{
-		{"boolVal", "BOOL", true, 1, false, 0, 0, false},
-		{"intVal", "INT", true, 8, false, 0, 0, false},
-		{"floatVal", "FLOAT", true, 8, false, 0, 0, false},
-		{"charVal", "CHAR", true, 1, true, 0, 0, false},
-		{"varCharVal", "VARCHAR", true, 128, true, 0, 0, false},
-		{"dateVal", "DATE", true, 8, false, 0, 0, false},
-		{"timestampVal", "TIMESTAMP", true, 8, false, 6, 0, true},
-		{"timestampTZVal", "TIMESTAMPTZ", true, 8, false, 6, 0, true},
-		{"intervalDayVal", "INTERVAL DAY", true, 8, false, 0, 0, true},
-		{"intervalVal", "INTERVAL DAY TO SECOND", true, 8, false, 4, 0, true},
-		{"intervalHourVal", "INTERVAL HOUR", true, 8, false, 0, 0, true},
-		{"intervalHMVal", "INTERVAL HOUR TO MINUTE", true, 8, false, 0, 0, true},
-		{"intervalHSVal", "INTERVAL HOUR TO SECOND", true, 8, false, 6, 0, true},
-		{"intervalMinVal", "INTERVAL MINUTE", true, 8, false, 0, 0, true},
-		{"intervalMSVal", "INTERVAL MINUTE TO SECOND", true, 8, false, 6, 0, true},
-		{"intervalSecVal", "INTERVAL SECOND", true, 8, false, 2, 0, true},
-		{"intervalDHVal", "INTERVAL DAY TO HOUR", true, 8, false, 0, 0, true},
-		{"intervalDMVal", "INTERVAL DAY TO MINUTE", true, 8, false, 0, 0, true},
-		{"intervalYearVal", "INTERVAL YEAR", true, 8, false, 0, 0, true},
-		{"intervalYMVal", "INTERVAL YEAR TO MONTH", true, 8, false, 0, 0, true},
-		{"intervalMonthVal", "INTERVAL MONTH", true, 8, false, 0, 0, true},
-		{"timeVal", "TIME", true, 8, false, 6, 0, true},
-		{"timeTZVal", "TIMETZ", true, 8, false, 6, 0, true},
-		{"varBinVal", "VARBINARY", true, 80, true, 0, 0, false},
-		{"uuidVal", "UUID", true, 16, false, 0, 0, false},
-		{"lVarCharVal", "LONG VARCHAR", true, 65536, true, 0, 0, false},
-		{"lVarBinaryVal", "LONG VARBINARY", true, 65536, true, 0, 0, false},
-		{"binaryVal", "BINARY", true, 1, true, 0, 0, false},
-		{"numericVal", "NUMERIC", true, 24, true, 40, 18, true},
+		{"boolVal", "BOOL", reflect.TypeOf(sql.NullBool{}), true, 1, false, 0, 0, false},
+		{"intVal", "INT", reflect.TypeOf(sql.NullInt64{}), true, 8, false, 0, 0, false},
+		{"floatVal", "FLOAT", reflect.TypeOf(sql.NullFloat64{}), true, 8, false, 0, 0, false},
+		{"charVal", "CHAR", reflect.TypeOf(sql.NullString{}), true, 1, true, 0, 0, false},
+		{"varCharVal", "VARCHAR", reflect.TypeOf(sql.NullString{}), true, 128, true, 0, 0, false},
+		{"dateVal", "DATE", reflect.TypeOf(sql.NullTime{}), true, 8, false, 0, 0, false},
+		{"timestampVal", "TIMESTAMP", reflect.TypeOf(sql.NullTime{}), true, 8, false, 6, 0, true},
+		{"timestampTZVal", "TIMESTAMPTZ", reflect.TypeOf(sql.NullTime{}), true, 8, false, 6, 0, true},
+		{"intervalDayVal", "INTERVAL DAY", reflect.TypeOf(sql.NullString{}), true, 8, false, 0, 0, true},
+		{"intervalVal", "INTERVAL DAY TO SECOND", reflect.TypeOf(sql.NullString{}), true, 8, false, 4, 0, true},
+		{"intervalHourVal", "INTERVAL HOUR", reflect.TypeOf(sql.NullString{}), true, 8, false, 0, 0, true},
+		{"intervalHMVal", "INTERVAL HOUR TO MINUTE", reflect.TypeOf(sql.NullString{}), true, 8, false, 0, 0, true},
+		{"intervalHSVal", "INTERVAL HOUR TO SECOND", reflect.TypeOf(sql.NullString{}), true, 8, false, 6, 0, true},
+		{"intervalMinVal", "INTERVAL MINUTE", reflect.TypeOf(sql.NullString{}), true, 8, false, 0, 0, true},
+		{"intervalMSVal", "INTERVAL MINUTE TO SECOND", reflect.TypeOf(sql.NullString{}), true, 8, false, 6, 0, true},
+		{"intervalSecVal", "INTERVAL SECOND", reflect.TypeOf(sql.NullString{}), true, 8, false, 2, 0, true},
+		{"intervalDHVal", "INTERVAL DAY TO HOUR", reflect.TypeOf(sql.NullString{}), true, 8, false, 0, 0, true},
+		{"intervalDMVal", "INTERVAL DAY TO MINUTE", reflect.TypeOf(sql.NullString{}), true, 8, false, 0, 0, true},
+		{"intervalYearVal", "INTERVAL YEAR", reflect.TypeOf(sql.NullString{}), true, 8, false, 0, 0, true},
+		{"intervalYMVal", "INTERVAL YEAR TO MONTH", reflect.TypeOf(sql.NullString{}), true, 8, false, 0, 0, true},
+		{"intervalMonthVal", "INTERVAL MONTH", reflect.TypeOf(sql.NullString{}), true, 8, false, 0, 0, true},
+		{"timeVal", "TIME", reflect.TypeOf(sql.NullTime{}), true, 8, false, 6, 0, true},
+		{"timeTZVal", "TIMETZ", reflect.TypeOf(sql.NullTime{}), true, 8, false, 6, 0, true},
+		{"varBinVal", "VARBINARY", reflect.TypeOf(sql.NullString{}), true, 80, true, 0, 0, false},
+		{"uuidVal", "UUID", reflect.TypeOf(sql.NullString{}), true, 16, false, 0, 0, false},
+		{"lVarCharVal", "LONG VARCHAR", reflect.TypeOf(sql.NullString{}), true, 65536, true, 0, 0, false},
+		{"lVarBinaryVal", "LONG VARBINARY", reflect.TypeOf(sql.NullString{}), true, 65536, true, 0, 0, false},
+		{"binaryVal", "BINARY", reflect.TypeOf(sql.NullString{}), true, 1, true, 0, 0, false},
+		{"numericVal", "NUMERIC", reflect.TypeOf(sql.NullFloat64{}), true, 24, true, 40, 18, true},
 	}
 
 	// Read column types
@@ -707,6 +709,10 @@ func TestValueTypes(t *testing.T) {
 		// DatabaseTypeName
 		databaseTypeName := column.DatabaseTypeName()
 		assertEqual(t, databaseTypeName, col.databaseTypeName)
+
+		// ScanType
+		scanType := column.ScanType()
+		assertEqual(t, scanType, col.scanType)
 
 		// Nullable
 		nullable, ok := column.Nullable()

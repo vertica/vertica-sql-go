@@ -34,10 +34,12 @@ package vertigo
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -124,7 +126,7 @@ func (r *rows) Next(dest []driver.Value) error {
 			dest[idx], err = parseTimestampTZColumn("0000-01-01 " + string(colVal))
 		case common.ColTypeInterval, common.ColTypeIntervalYM: // stays string
 			dest[idx] = string(colVal)
-		case common.ColTypeVarBinary, common.ColTypeLongVarBinary, common.ColTypeBinary: // to []byte - this one's easy
+		case common.ColTypeVarBinary, common.ColTypeLongVarBinary, common.ColTypeBinary: // to HEX string
 			dest[idx] = hex.EncodeToString(colVal)
 		default:
 			dest[idx] = string(colVal)
@@ -304,6 +306,28 @@ func (r *rows) ColumnTypeLength(index int) (length int64, ok bool) {
 		return (precision/19 + 1) * 8, true
 	default:
 		return 0, false
+	}
+}
+
+// Returns the value type that can be used to scan types into.
+// Interface: driver.RowsColumnTypeScanType
+func (r *rows) ColumnTypeScanType(index int) reflect.Type {
+	switch r.columnDefs.Columns[index].DataTypeOID {
+	case common.ColTypeBoolean:
+		return reflect.TypeOf(sql.NullBool{})
+	case common.ColTypeInt64:
+		return reflect.TypeOf(sql.NullInt64{})
+	case common.ColTypeFloat64, common.ColTypeNumeric:
+		return reflect.TypeOf(sql.NullFloat64{})
+	case common.ColTypeVarChar, common.ColTypeLongVarChar, common.ColTypeChar,
+		common.ColTypeVarBinary, common.ColTypeLongVarBinary, common.ColTypeBinary,
+		common.ColTypeUUID, common.ColTypeInterval, common.ColTypeIntervalYM:
+		return reflect.TypeOf(sql.NullString{})
+	case common.ColTypeDate, common.ColTypeTimestamp, common.ColTypeTimestampTZ,
+		common.ColTypeTime, common.ColTypeTimeTZ:
+		return reflect.TypeOf(sql.NullTime{})
+	default:
+		return reflect.TypeOf(new(interface{}))
 	}
 }
 
