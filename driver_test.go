@@ -49,11 +49,12 @@ import (
 )
 
 var (
-	testLogger         = logger.New("test")
-	myDBConnectString  string
-	otherConnectString string
-	badConnectString   string
-	ctx                context.Context
+	testLogger            = logger.New("test")
+	myDBConnectString     string
+	otherConnectString    string
+	badConnectString      string
+	failoverConnectString string
+	ctx                   context.Context
 )
 
 func assertTrue(t *testing.T, v bool) {
@@ -401,6 +402,15 @@ func TestTransaction(t *testing.T) {
 	tx, err = connDB.BeginTx(ctx, opts)
 	assertNoErr(t, err)
 	assertNoErr(t, tx.Rollback())
+}
+
+func TestConnFailover(t *testing.T) {
+	// Connection string's "backup_server_node" parameter contains the correct host
+	connDB, err := sql.Open("vertica", failoverConnectString)
+	assertNoErr(t, err)
+
+	assertNoErr(t, connDB.PingContext(ctx))
+	assertNoErr(t, connDB.Close())
 }
 
 func TestPWAuthentication(t *testing.T) {
@@ -1094,6 +1104,7 @@ func init() {
 	myDBConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@" + *verticaHostPort + "/" + *verticaUserName + "?" + usePreparedStmtsString + "&tlsMode=" + *tlsMode
 	otherConnectString = "vertica://TestGuy:TestGuyPass@" + *verticaHostPort + "/TestGuy?tlsmode=" + *tlsMode
 	badConnectString = "vertica://TestGuy:TestGuyBadPass@" + *verticaHostPort + "/TestGuy?tlsmode=" + *tlsMode
+	failoverConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@badHost" + "/" + *verticaUserName + "?backup_server_node=abc.com:100000," + *verticaHostPort + ",localhost:port"
 
 	ctx = context.Background()
 }

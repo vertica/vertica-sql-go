@@ -68,6 +68,7 @@ type connection struct {
 	cancelKey        uint32
 	transactionState byte
 	usePreparedStmts bool
+	connHostsList    []string
 	scratch          [512]byte
 	sessionID        string
 	serverTZOffset   string
@@ -185,15 +186,27 @@ func newConnection(connString string) (*connection, error) {
 	// Read connection load balance flag.
 	loadBalanceFlag := result.connURL.Query().Get("connection_load_balance")
 
+	// Read connection failover flag.
+	backupHostsStr := result.connURL.Query().Get("backup_server_node")
+	if backupHostsStr == "" {
+		result.connHostsList = []string{result.connURL.Host}
+	} else {
+		// Parse comma-seperated list of backup host-port pairs
+		hosts := strings.Split(backupHostsStr, ",")
+		// Push target host to front of the hosts list
+		result.connHostsList = append([]string{result.connURL.Host}, hosts...)
+	}
+
+	// Read SSL/TLS flag.
 	sslFlag := strings.ToLower(result.connURL.Query().Get("tlsmode"))
 	if sslFlag == "" {
 		sslFlag = "none"
 	}
 
-	result.conn, err = net.Dial("tcp", result.connURL.Host)
+	result.conn, err = result.establishSocketConnection()
 
 	if err != nil {
-		return nil, fmt.Errorf("cannot connect to %s (%s)", result.connURL.Host, err.Error())
+		return nil, err
 	}
 
 	// Load Balancing
@@ -218,6 +231,28 @@ func newConnection(connString string) (*connection, error) {
 	}
 
 	return result, nil
+}
+
+func (v *connection) establishSocketConnection() (net.Conn, error) {
+	// Failover: loop to try all hosts in the list
+	err_msg := ""
+	for i := 0; i < len(v.connHostsList); i++ {
+		// net.Dial will resolve the host to multiple IP addresses,
+		// and try each IP address in order until one succeeds.
+		conn, err := net.Dial("tcp", v.connHostsList[i])
+		if err != nil {
+			err_msg += fmt.Sprintf("\n  '%s': %s", v.connHostsList[i], err.Error())
+		} else {
+			if len(err_msg) != 0 {
+				connectionLogger.Debug("Failed to establish a connection to %s", err_msg)
+			}
+			connectionLogger.Debug("Established socket connection to %s", v.connHostsList[i])
+			v.connHostsList = v.connHostsList[i:]
+			return conn, err
+		}
+	}
+	// All of the hosts failed
+	return nil, fmt.Errorf("Failed to establish a connection to the primary server or any backup host.%s", err_msg)
 }
 
 func (v *connection) recvMessage() (msgs.BackEndMsg, error) {
@@ -494,9 +529,18 @@ func (v *connection) balanceLoad() error {
 	// v.connURL.Hostname() is used by initializeSSL(), so load balancing info should not write into v.connURL
 	loadBalanceAddr := fmt.Sprintf("%s:%d", msg.Host, msg.Port)
 
+	if v.connHostsList[0] == loadBalanceAddr {
+		// Already connecting to the host
+		return nil
+	}
+
+	// Push the new host onto the host list before connecting again.
+	// Note that this leaves the originally-specified host as the first failover possibility
+	v.connHostsList = append([]string{loadBalanceAddr}, v.connHostsList...)
+
 	// Connect to new host
 	v.conn.Close()
-	v.conn, err = net.Dial("tcp", loadBalanceAddr)
+	v.conn, err = v.establishSocketConnection()
 
 	if err != nil {
 		return fmt.Errorf("cannot redirect to %s (%s)", loadBalanceAddr, err.Error())
