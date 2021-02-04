@@ -54,8 +54,8 @@ type FileCache struct {
 }
 
 // NewFileCache returns a file cache with a set row limit
-func NewFileCache(rowLimit int) (*FileCache, error) {
-	file, err := ioutil.TempFile("", ".vertica-sql-go.*.dat")
+func NewFileCache(tempDir string, rowLimit int) (*FileCache, error) {
+	file, err := ioutil.TempFile(tempDir, ".vertica-sql-go.*.dat")
 	if err != nil {
 		return nil, err
 	}

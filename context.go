@@ -55,6 +55,9 @@ type VerticaContext interface {
 
 	SetInMemoryResultRowLimit(rowLimit int) error
 	GetInMemoryResultRowLimit() int
+
+	SetTempDir(tempDir string) error
+	GetTempDir() string
 }
 
 type verticaContext struct {
@@ -63,6 +66,7 @@ type verticaContext struct {
 	inputStream io.Reader
 	blockSize   int
 	rowLimit    int
+	tempDir		string
 }
 
 // NewVerticaContext creates a new context that inherits the values and behavior of the provided parent context.
@@ -122,3 +126,16 @@ func (c *verticaContext) SetInMemoryResultRowLimit(rowLimit int) error {
 func (c *verticaContext) GetInMemoryResultRowLimit() int {
 	return c.rowLimit
 }
+
+func (c *verticaContext) SetTempDir(dir string) error {
+	if dir == "" {
+		return fmt.Errorf("cannot set empty value for temp dir")
+	}
+	c.tempDir = dir
+	return nil
+}
+
+func (c *verticaContext) GetTempDir() string {
+	return c.tempDir
+}
+

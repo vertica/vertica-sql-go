@@ -41,7 +41,7 @@ import (
 func TestFileCache(t *testing.T) {
 	t.Run("without enough rows to switch to a file", func(t *testing.T) {
 		rowCount := 100
-		cache, err := NewFileCache(1000)
+		cache, err := NewFileCache("", 1000)
 		if err != nil {
 			t.Fatalf("Unable to create temp file")
 		}
@@ -63,7 +63,7 @@ func TestFileCache(t *testing.T) {
 	})
 	t.Run("with file writes", func(t *testing.T) {
 		rowCount := 10000
-		cache, err := NewFileCache(100)
+		cache, err := NewFileCache("", 100)
 		if err != nil {
 			t.Fatalf("Unable to create temp file")
 		}
