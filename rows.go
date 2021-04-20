@@ -71,6 +71,7 @@ var (
 	paddingString        = "000000"
 	defaultRowBufferSize = 256
 	rowLogger            = logger.New("row")
+	endsWithHalfHour     = regexp.MustCompile(".*:\\d{2}$")
 )
 
 // Columns returns the names of all of the columns
@@ -172,7 +173,6 @@ func parseTimestampTZColumn(fullString string) (driver.Value, error) {
 		fullString = strings.Replace(fullString, " BC", "", -1)
 	}
 
-	endsWithHalfHour, _ := regexp.Compile(".*:\\d{2}$")
 	if !endsWithHalfHour.MatchString(fullString) {
 		fullString = fullString + ":00"
 	}
