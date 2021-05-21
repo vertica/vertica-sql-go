@@ -82,7 +82,7 @@ echo "--- Content of req.conf: ---"
 cat req.conf
 
 openssl req \
-   -new
+   -new \
    -key server.key \
    -out server.csr \
    -config req.conf \
