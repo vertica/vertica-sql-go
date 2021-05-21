@@ -13,6 +13,7 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v2
+
       - name: Set up Go ${{ matrix.go-version }}
         uses: actions/setup-go@v2
         with:
@@ -29,7 +30,8 @@ jobs:
           sleep 60
       - name: Run tests
         run: |
-          .resources/tests/genCerts.sh
+          ls -l ./resources/tests/genCerts.sh
+          ./resources/tests/genCerts.sh
           go test -race . -args --locator localhost:5433 --user dbadmin
           go test -race . -args --locator localhost:5433 --user dbadmin --use_prepared_statements=0
           go test -race ./logger
@@ -44,4 +46,4 @@ jobs:
           docker exec -u dbadmin vertica_docker /opt/vertica/bin/admintools --tool stop_db --database docker
           docker exec -u dbadmin vertica_docker /opt/vertica/bin/admintools --tool start_db --database docker
           go test -race . -args --locator localhost:5433 --user dbadmin --tlsmode=custom
-          go test -race . -args --locator localhost:5433 --user dbadmin --tlsmode=custom --use_prepared_statements=0 
+          go test -race . -args --locator localhost:5433 --user dbadmin --tlsmode=custom --use_prepared_statements=0
