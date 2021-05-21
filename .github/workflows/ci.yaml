@@ -32,6 +32,14 @@ jobs:
         run: |
           ls -l ./resources/tests/genCerts.sh
           ./resources/tests/genCerts.sh
+
+          echo "---- Content of server.key:"
+          cat  ./resources/tests/ssl/server.key
+          echo "---- Content of server.crt:"
+          cat  ./resources/tests/ssl/server.crt
+          echo "---- Content of rootCA.crt"
+          cat ./resources/tests/ssl/rootCA.crt
+          
           go test -race . -args --locator localhost:5433 --user dbadmin
           go test -race . -args --locator localhost:5433 --user dbadmin --use_prepared_statements=0
           go test -race ./logger
