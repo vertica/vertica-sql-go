@@ -30,19 +30,15 @@ jobs:
           sleep 60
       - name: Run tests
         run: |
-          ls -l ./resources/tests/genCerts.sh
+          echo "---- Generating certs"
           ./resources/tests/genCerts.sh
 
-          echo "---- Content of server.key:"
-          cat  ./resources/tests/ssl/server.key
-          echo "---- Content of server.crt:"
-          cat  ./resources/tests/ssl/server.crt
-          echo "---- Content of rootCA.crt"
-          cat ./resources/tests/ssl/rootCA.crt
-          
+          echo "---- Testing before enabling SSL in vertica"
           go test -race . -args --locator localhost:5433 --user dbadmin
           go test -race . -args --locator localhost:5433 --user dbadmin --use_prepared_statements=0
           go test -race ./logger
+
+          echo "---- Setting up SSLPrivateKey and SSLCertificate, and testing in tlsmode server"
           docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "SELECT SET_CONFIG_PARAMETER('SSLPrivateKey', '`cat ./resources/tests/ssl/server.key`');"
           docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "SELECT SET_CONFIG_PARAMETER('SSLCertificate', '`cat ./resources/tests/ssl/server.crt`');"
           docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "ALTER DATABASE docker SET EnableSSL=1;"
@@ -50,6 +46,8 @@ jobs:
           docker exec -u dbadmin vertica_docker /opt/vertica/bin/admintools --tool start_db --database docker
           go test -race . -args --locator localhost:5433 --user dbadmin --tlsmode=server
           go test -race . -args --locator localhost:5433 --user dbadmin --tlsmode=server --use_prepared_statements=0
+
+          echo "---- Setting up SSLCa and testing in tlsmode custom"
           docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "SELECT SET_CONFIG_PARAMETER('SSLCa', '`cat ./resources/tests/ssl/rootCA.crt`');"
           docker exec -u dbadmin vertica_docker /opt/vertica/bin/admintools --tool stop_db --database docker
           docker exec -u dbadmin vertica_docker /opt/vertica/bin/admintools --tool start_db --database docker
