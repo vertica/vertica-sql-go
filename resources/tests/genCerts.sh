@@ -26,6 +26,8 @@ OU = ${ORG}
 CN = CA_${USER}@${CN}
 EOF
 
+echo "------ Content of ca_req.conf: ------"
+cat ca_req.conf
 echo "Generating rootCA.crt"
 
 openssl req \
@@ -78,7 +80,15 @@ echo "Generating server.key"
 openssl genrsa -out server.key 4096
 
 echo "Generating server.csr"
-openssl req -new -key server.key -out server.csr -config req.conf -extensions 'v3_req'
+echo "--- Content of req.conf: ---"
+cat req.conf
+
+openssl req \
+   -new
+   -key server.key \
+   -out server.csr \
+   -config req.conf \
+   -extensions 'v3_req'
 
 echo "Generating server.crt"
 openssl x509 \
