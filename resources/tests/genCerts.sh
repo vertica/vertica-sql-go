@@ -5,7 +5,7 @@
 : ${LOCALE:=FortCollins}
 : ${COMPANY:=Vertica}
 : ${ORG:=SQL}
-: ${CN:=$(hostname -f)}
+: ${CN:=localhost}
 
 : ${CERT_LOC:=./resources/tests/ssl}￼
 [ -d "$CERT_LOC" ] || mkdir -p "$CERT_LOC"
@@ -26,8 +26,6 @@ OU = ${ORG}
 CN = CA_${USER}@${CN}
 EOF
 
-echo "------ Content of ca_req.conf: ------"
-cat ca_req.conf
 echo "Generating rootCA.crt"
 
 openssl req \
