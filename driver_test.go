@@ -163,6 +163,11 @@ func closeConnection(t *testing.T, connDB *sql.DB, teardownScript ...interface{}
 }
 
 func TestCustomTLSConfiguration(t *testing.T) {
+
+	// DEBUG
+	fmt.Println("*************** In TestCustomTLSConfiguration")
+
+
 	if *tlsMode != "custom" {
 		return
 	}
@@ -1171,7 +1176,15 @@ func init() {
 	} else {
 		usePreparedStmtsString += "0"
 	}
+
+	// DEBUG
+	fmt.Println("********************** tlsMode: ", *tlsMode)
+	
 	if *tlsMode == "custom" {
+
+	// DEBUG
+	fmt.Println("************** *tlsMode IS custom")
+
 		testLogger.Info("loading tls config")
 		tlsConfig, err := getTlsConfig()
 		if err != nil {
