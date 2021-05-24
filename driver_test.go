@@ -1152,6 +1152,13 @@ func getTlsConfig() (*tls.Config, error) {
 }
 
 func init() {
+
+	// TODO: debug
+	flag.Set("alsologtostderr", fmt.Sprintf("%t", true))
+	var logLevel string
+	flag.StringVar(&logLevel, "logLevel", "4", "test")
+	flag.Lookup("v").Value.Set(logLevel)
+	
 	// One or both lines below are necessary depending on your go version
 	testing.Init()
 	flag.Parse()
