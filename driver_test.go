@@ -175,6 +175,8 @@ func TestCustomTLSConfiguration(t *testing.T) {
 	var sslState string
 	for rows.Next() {
 		assertNoErr(t, rows.Scan(&sslState))
+		// TODO remove
+		fmt.Println("--- row: ", rows)
 		if strings.ToLower(sslState) == "mutual" {
 			return
 		}
