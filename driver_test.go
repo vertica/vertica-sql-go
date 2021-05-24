@@ -1156,8 +1156,9 @@ func init() {
 	testing.Init()
 	flag.Parse()
 
-	testLogger.SetLogLevel(logger.DEBUG)
-	
+	// TODO: debug
+	logger.SetLogLevel(logger.TRACE)
+
 	testLogger.Info("user name: %s", *verticaUserName)
 	testLogger.Info("password : **********")
 	testLogger.Info("locator  : %s", *verticaHostPort)
