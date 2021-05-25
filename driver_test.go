@@ -167,7 +167,6 @@ func TestCustomTLSConfiguration(t *testing.T) {
 	// DEBUG
 	fmt.Println("*************** In TestCustomTLSConfiguration")
 
-
 	if *tlsMode != "custom" {
 		return
 	}
@@ -176,6 +175,12 @@ func TestCustomTLSConfiguration(t *testing.T) {
 	rows, err := connDB.QueryContext(ctx, "SELECT ssl_state FROM sessions")
 	assertNoErr(t, err)
 	defer rows.Close()
+
+	// fmt.Println("------------------------- About to sleep 60 seconds")
+	// time.Sleep(60 * time.Second) // DEBUG
+	// fmt.Println("------------------------- Done sleeping")
+
+	fmt.Println("*************** In TestCustomTLSConfiguration before checking tls connection")
 
 	var sslState string
 	for rows.Next() {
@@ -1156,13 +1161,24 @@ func getTlsConfig() (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
+// Prevent "flag provided but not defined: -test.paniconexit0"
+// when calling flag.Parse() below
+
+var _ = func() bool {
+	testing.Init()
+	return true
+}()
+
 func init() {
 	// One or both lines below are necessary depending on your go version
 	testing.Init()
 	flag.Parse()
 
 	// TODO: debug
-	logger.SetLogLevel(logger.TRACE)
+
+	fmt.Println("--------------------- Init() called")
+	logger.SetLogLevel(logger.INFO)
+	// DEBUG *tlsMode = "custom"
 
 	testLogger.Info("user name: %s", *verticaUserName)
 	testLogger.Info("password : **********")
@@ -1177,13 +1193,10 @@ func init() {
 		usePreparedStmtsString += "0"
 	}
 
-	// DEBUG
-	fmt.Println("********************** tlsMode: ", *tlsMode)
-	
 	if *tlsMode == "custom" {
 
-	// DEBUG
-	fmt.Println("************** *tlsMode IS custom")
+		// DEBUG
+		fmt.Println("************** *tlsMode IS custom")
 
 		testLogger.Info("loading tls config")
 		tlsConfig, err := getTlsConfig()
@@ -1200,4 +1213,5 @@ func init() {
 	failoverConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@badHost" + "/" + *verticaUserName + "?backup_server_node=abc.com:100000," + *verticaHostPort + ",localhost:port"
 
 	ctx = context.Background()
+	fmt.Println("--------------------- End of Init()")
 }

@@ -5,6 +5,7 @@
 : ${LOCALE:=FortCollins}
 : ${COMPANY:=Vertica}
 : ${ORG:=SQL}
+#: ${CN:=localhost}
 : ${CN:=localhost}
 
 : ${CERT_LOC:=./resources/tests/ssl}￼
@@ -70,16 +71,13 @@ subjectKeyIdentifier = hash
 authorityKeyIdentifier = keyid,issuer:always
 keyUsage = critical, digitalSignature, keyEncipherment
 extendedKeyUsage = serverAuth
-subjectAltName = DNS:localhost
+subjectAltName = DNS:${CN}
 EOF
-
 echo "Generating server.key"
 
 openssl genrsa -out server.key 4096
 
 echo "Generating server.csr"
-echo "--- Content of req.conf: ---"
-cat req.conf
 
 openssl req \
    -new \
@@ -113,9 +111,9 @@ ST = ${STATE}
 L = ${LOCALE}
 O = ${COMPANY}
 OU = ${ORG}
-CN = CA_${USER}@${CN}
+CN = localhost
 EOF
-
+# CN = CA_${USER}@${CN}
 
 cat > client.cnf <<EOF
 basicConstraints = CA:FALSE
@@ -125,6 +123,7 @@ subjectKeyIdentifier = hash
 authorityKeyIdentifier = keyid,issuer
 keyUsage = critical, nonRepudiation, digitalSignature, keyEncipherment
 extendedKeyUsage = clientAuth, emailProtection
+subjectAltName = DNS:localhost
 EOF
 
 echo "Generating client.key"
