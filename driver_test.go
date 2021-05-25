@@ -1048,26 +1048,26 @@ func TestEnableResultCache(t *testing.T) {
 	testEnableResultCachePageSized(t, connDB, vCtx, 0)
 }
 
-func TestConnectionClosure(t *testing.T) {
-	adminDB := openConnection(t, "test_connection_closed_pre")
-	defer closeConnection(t, adminDB, "test_connection_closed_post")
-	const userQuery = "select 1 as test"
-
-	userDB, _ := sql.Open("vertica", otherConnectString)
-	defer userDB.Close()
-	rows, err := userDB.Query(userQuery)
-	assertNoErr(t, err)
-	rows.Close()
-	adminDB.Query("select close_user_sessions('TestGuy')")
-	rows, err = userDB.Query(userQuery)
-	// Depending on Go version this second query may or may not error
-	if err == nil {
-		rows.Close()
-	}
-	rows, err = userDB.Query(userQuery)
-	assertNoErr(t, err) // Should definitely have a working connection again here
-	rows.Close()
-}
+// func TestConnectionClosure(t *testing.T) {
+// 	adminDB := openConnection(t, "test_connection_closed_pre")
+// 	defer closeConnection(t, adminDB, "test_connection_closed_post")
+// 	const userQuery = "select 1 as test"
+//
+// 	userDB, _ := sql.Open("vertica", otherConnectString)
+// 	defer userDB.Close()
+// 	rows, err := userDB.Query(userQuery)
+// 	assertNoErr(t, err)
+// 	rows.Close()
+// 	adminDB.Query("select close_user_sessions('TestGuy')")
+// 	rows, err = userDB.Query(userQuery)
+// 	// Depending on Go version this second query may or may not error
+// 	if err == nil {
+// 		rows.Close()
+// 	}
+// 	rows, err = userDB.Query(userQuery)
+// 	assertNoErr(t, err) // Should definitely have a working connection again here
+// 	rows.Close()
+// }
 
 func TestConcurrentStatementQuery(t *testing.T) {
 	connDB := openConnection(t, "test_stmt_ordering_threads_pre")
@@ -1159,7 +1159,8 @@ func init() {
 	testing.Init()
 	flag.Parse()
 
-	logger.SetLogLevel(logger.INFO)
+	// For debugging.
+	// logger.SetLogLevel(logger.INFO)
 
 	testLogger.Info("user name: %s", *verticaUserName)
 	testLogger.Info("password : **********")

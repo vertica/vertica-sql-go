@@ -35,7 +35,7 @@ jobs:
 
           echo "---- Testing before enabling SSL in vertica"
           go test -race . -args --locator localhost:5433 --user dbadmin
-          go test -race . -args --locator localhost:5433 --user dbadmin --use_prepared_statements=0
+          # go test -race . -args --locator localhost:5433 --user dbadmin --use_prepared_statements=0
           go test -race ./logger
 
           echo "---- Setting up SSLPrivateKey and SSLCertificate, and testing in tlsmode server"
@@ -47,7 +47,7 @@ jobs:
           docker exec -u dbadmin vertica_docker /opt/vertica/bin/admintools --tool start_db --database docker
           echo "------ Testing with --tlsmode=server"
           go test -race . -args --locator localhost:5433 --user dbadmin --tlsmode=server
-          go test -race . -args --locator localhost:5433 --user dbadmin --tlsmode=server --use_prepared_statements=0
+          # go test -race . -args --locator localhost:5433 --user dbadmin --tlsmode=server --use_prepared_statements=0
 
           echo "---- Setting up SSLCa and testing in tlsmode custom"
           docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "SELECT SET_CONFIG_PARAMETER('SSLCa', '`cat ./resources/tests/ssl/rootCA.crt`');"
@@ -56,4 +56,4 @@ jobs:
           docker exec -u dbadmin vertica_docker /opt/vertica/bin/admintools --tool start_db --database docker
           echo "------ Testing with --tlsmode=custom"
           go test -race . -args --locator localhost:5433 --user dbadmin --tlsmode=custom
-          go test -race . -args --locator localhost:5433 --user dbadmin --tlsmode=custom --use_prepared_statements=0
+          # go test -race . -args --locator localhost:5433 --user dbadmin --tlsmode=custom --use_prepared_statements=0
