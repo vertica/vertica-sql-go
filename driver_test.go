@@ -164,9 +164,6 @@ func closeConnection(t *testing.T, connDB *sql.DB, teardownScript ...interface{}
 
 func TestCustomTLSConfiguration(t *testing.T) {
 
-	// DEBUG
-	fmt.Println("*************** In TestCustomTLSConfiguration")
-
 	if *tlsMode != "custom" {
 		return
 	}
@@ -175,10 +172,6 @@ func TestCustomTLSConfiguration(t *testing.T) {
 	rows, err := connDB.QueryContext(ctx, "SELECT ssl_state FROM sessions")
 	assertNoErr(t, err)
 	defer rows.Close()
-
-	// fmt.Println("------------------------- About to sleep 60 seconds")
-	// time.Sleep(60 * time.Second) // DEBUG
-	// fmt.Println("------------------------- Done sleeping")
 
 	fmt.Println("*************** In TestCustomTLSConfiguration before checking tls connection")
 
@@ -1055,26 +1048,26 @@ func TestEnableResultCache(t *testing.T) {
 	testEnableResultCachePageSized(t, connDB, vCtx, 0)
 }
 
-//func TestConnectionClosure(t *testing.T) {
-//	adminDB := openConnection(t, "test_connection_closed_pre")
-//	defer closeConnection(t, adminDB, "test_connection_closed_post")
-//	const userQuery = "select 1 as test"
-//
-//	userDB, _ := sql.Open("vertica", otherConnectString)
-//	defer userDB.Close()
-//	rows, err := userDB.Query(userQuery)
-//	assertNoErr(t, err)
-//	rows.Close()
-//	adminDB.Query("select close_user_sessions('TestGuy')")
-//	rows, err = userDB.Query(userQuery)
-//	// Depending on Go version this second query may or may not error
-//	if err == nil {
-//		rows.Close()
-//	}
-//	rows, err = userDB.Query(userQuery)
-//	assertNoErr(t, err) // Should definitely have a working connection again here
-//	rows.Close()
-//}
+func TestConnectionClosure(t *testing.T) {
+	adminDB := openConnection(t, "test_connection_closed_pre")
+	defer closeConnection(t, adminDB, "test_connection_closed_post")
+	const userQuery = "select 1 as test"
+
+	userDB, _ := sql.Open("vertica", otherConnectString)
+	defer userDB.Close()
+	rows, err := userDB.Query(userQuery)
+	assertNoErr(t, err)
+	rows.Close()
+	adminDB.Query("select close_user_sessions('TestGuy')")
+	rows, err = userDB.Query(userQuery)
+	// Depending on Go version this second query may or may not error
+	if err == nil {
+		rows.Close()
+	}
+	rows, err = userDB.Query(userQuery)
+	assertNoErr(t, err) // Should definitely have a working connection again here
+	rows.Close()
+}
 
 func TestConcurrentStatementQuery(t *testing.T) {
 	connDB := openConnection(t, "test_stmt_ordering_threads_pre")
@@ -1161,24 +1154,12 @@ func getTlsConfig() (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
-// Prevent "flag provided but not defined: -test.paniconexit0"
-// when calling flag.Parse() below
-
-var _ = func() bool {
-	testing.Init()
-	return true
-}()
-
 func init() {
 	// One or both lines below are necessary depending on your go version
 	testing.Init()
 	flag.Parse()
 
-	// TODO: debug
-
-	fmt.Println("--------------------- Init() called")
 	logger.SetLogLevel(logger.INFO)
-	// DEBUG *tlsMode = "custom"
 
 	testLogger.Info("user name: %s", *verticaUserName)
 	testLogger.Info("password : **********")
@@ -1195,9 +1176,6 @@ func init() {
 
 	if *tlsMode == "custom" {
 
-		// DEBUG
-		fmt.Println("************** *tlsMode IS custom")
-
 		testLogger.Info("loading tls config")
 		tlsConfig, err := getTlsConfig()
 		if err != nil {
@@ -1207,7 +1185,7 @@ func init() {
 			testLogger.Fatal("could not register tls config: %v", err)
 		}
 	}
-	myDBConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@" + *verticaHostPort + "/" + *verticaUserName + "?" + usePreparedStmtsString + "&tlsMode=" + *tlsMode
+	myDBConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@" + *verticaHostPort + "/" + *verticaUserName + "?" + usePreparedStmtsString + "&tlsmode=" + *tlsMode
 	otherConnectString = "vertica://TestGuy:TestGuyPass@" + *verticaHostPort + "/TestGuy?tlsmode=" + *tlsMode
 	badConnectString = "vertica://TestGuy:TestGuyBadPass@" + *verticaHostPort + "/TestGuy?tlsmode=" + *tlsMode
 	failoverConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@badHost" + "/" + *verticaUserName + "?backup_server_node=abc.com:100000," + *verticaHostPort + ",localhost:port"

@@ -5,7 +5,6 @@
 : ${LOCALE:=FortCollins}
 : ${COMPANY:=Vertica}
 : ${ORG:=SQL}
-#: ${CN:=localhost}
 : ${CN:=localhost}
 
 : ${CERT_LOC:=./resources/tests/ssl}￼
