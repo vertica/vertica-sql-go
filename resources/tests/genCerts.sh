@@ -59,19 +59,6 @@ subjectAltName = @dns_names
 DNS.1 = ${CN}
 EOF
 
-echo "----- Generating server.cnf"
-
-cat - > server.cnf <<EOF
-prompt = no
-basicConstraints = CA:FALSE
-nsCertType = server
-nsComment = "OpenSSL Generated Server Certificate"
-subjectKeyIdentifier = hash
-authorityKeyIdentifier = keyid,issuer:always
-keyUsage = critical, digitalSignature, keyEncipherment
-extendedKeyUsage = serverAuth
-subjectAltName = DNS:${CN}
-EOF
 echo "Generating server.key"
 
 openssl genrsa -out server.key 4096
