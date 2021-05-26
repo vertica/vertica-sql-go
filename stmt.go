@@ -386,7 +386,7 @@ func (s *stmt) formatArg(arg driver.NamedValue) string {
 			replaceStr = "false"
 		}
 	case time.Time:
-		replaceStr = fmt.Sprintf("%02d-%02d-%02d %02d:%02d:%02d",
+		replaceStr = fmt.Sprintf("'%02d-%02d-%02d %02d:%02d:%02d'",
 			v.Year(),
 			v.Month(),
 			v.Day(),
