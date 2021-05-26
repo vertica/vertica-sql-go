@@ -1085,8 +1085,8 @@ var usePreparedStmts = flag.Bool("use_prepared_statements", true, "whether to us
 
 func init() {
 	// One or both lines below are necessary depending on your go version
-	// testing.Init()
-	// flag.Parse()
+	 testing.Init()
+	 flag.Parse()
 
 	testLogger.Info("user name: %s", *verticaUserName)
 	testLogger.Info("password : **********")
