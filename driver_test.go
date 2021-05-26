@@ -173,8 +173,6 @@ func TestCustomTLSConfiguration(t *testing.T) {
 	assertNoErr(t, err)
 	defer rows.Close()
 
-	fmt.Println("*************** In TestCustomTLSConfiguration before checking tls connection")
-
 	var sslState string
 	for rows.Next() {
 		assertNoErr(t, rows.Scan(&sslState))
