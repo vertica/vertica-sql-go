@@ -375,6 +375,8 @@ func (s *stmt) cleanQuotes(val string) string {
 func (s *stmt) formatArg(arg driver.NamedValue) string {
 	var replaceStr string
 	switch v := arg.Value.(type) {
+	case nil:
+		replaceStr = "NULL"
 	case int64, float64:
 		replaceStr = fmt.Sprintf("%v", v)
 	case string:
