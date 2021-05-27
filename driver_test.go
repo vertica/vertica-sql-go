@@ -439,35 +439,23 @@ func TestConnFailover(t *testing.T) {
 
 func TestPWAuthentication(t *testing.T) {
 
-	fmt.Println("DEBUG: 1")
-
 	connDB := openConnection(t, "test_pw_authentication_pre")
 	defer closeConnection(t, connDB, "test_pw_authentication_post")
-
-	fmt.Println("DEBUG: 2")
 
 	// Let the user try to login now.
 	connDB2, err := sql.Open("vertica", otherConnectString)
 	assertNoErr(t, err)
-
-	fmt.Println("DEBUG: 3")
-
 	assertNoErr(t, connDB2.PingContext(ctx))
-	fmt.Println("DEBUG: 3")
 	assertNoErr(t, connDB2.Close())
 
 	// Try it again with a bad password
 	connDB3, err := sql.Open("vertica", badConnectString)
-	fmt.Println("DEBUG: 4")
 	assertNoErr(t, err)
-	fmt.Println("DEBUG: 5")
 	err = connDB3.PingContext(ctx)
 	if err != nil && err.Error() != "EOF" {
 		assertErr(t, err, "Invalid username or password")
 	}
-
 	assertNoErr(t, connDB3.Close())
-	fmt.Println("DEBUG: 8")
 }
 
 func testAnAuthScheme(t *testing.T, scheme string) {
