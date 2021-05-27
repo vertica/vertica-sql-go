@@ -35,6 +35,7 @@ package vertigo
 import (
 	"database/sql/driver"
 	"testing"
+	"time"
 )
 
 func testStatement(command string) *stmt {
@@ -54,6 +55,18 @@ func TestInterpolate(t *testing.T) {
 			command:  "select * from something",
 			expected: "select * from something",
 			args:     []driver.NamedValue{},
+		},
+		{
+			name:     "nil value",
+			command:  "select * from something where value = ?",
+			expected: "select * from something where value = NULL",
+			args:     []driver.NamedValue{{Value: nil}},
+		},
+		{
+			name:     "time value",
+			command:  "select * from something where value = ?",
+			expected: "select * from something where value = '2000-02-16 10:12:30.000456789'",
+			args:     []driver.NamedValue{{Value: time.Date(2000, 2, 16, 10, 12, 30, 456789, time.UTC)}},
 		},
 		{
 			name:     "simple string",
@@ -91,7 +104,7 @@ func TestInterpolate(t *testing.T) {
 			stmt := testStatement(tc.command)
 			result, err := stmt.interpolate(tc.args)
 			if result != tc.expected {
-				t.Errorf("Expected query to be %s but got %s", tc.command, result)
+				t.Errorf("Expected query to be %s but got %s", tc.expected, result)
 			}
 			if err != nil {
 				t.Errorf("Received error from interpolate: %v", err)
