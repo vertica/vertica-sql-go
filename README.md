@@ -112,6 +112,40 @@ err = connDB.PingContext(ctx)
 
 If there is an error in connection, the error result will be non-nil and contain a description of whatever problem occurred.
 
+### Using custom TLS config
+
+Custom TLS config(s) can be registered for TLS / SSL encrypted connection to the server.
+Here is an example of registering and using a `tls.Config`:
+
+```Go
+import vertigo "github.com/vertica/vertica-sql-go"
+
+// Register tls.Config
+rootCertPool := x509.NewCertPool()
+pem, err := ioutil.ReadFile("/certs/ca.crt")
+if err != nil {
+    LOG.Warningln("ERROR: failed reading cert file", err)
+}
+if ok := rootCertPool.AppendCertsFromPEM(pem); !ok {
+    LOG.Warningln("ERROR: Failed to append PEM")
+}
+tlsConfig := &tls.Config{RootCAs: rootCertPool, ServerName: host}
+vertigo.RegisterTLSConfig("myCustomName", tlsConfig)
+}
+
+// Connect using tls.Config
+var rawQuery = url.Values{}
+rawQuery.Add("tlsmode", "myCustomName")
+var query = url.URL{
+    Scheme:   "vertica",
+    User:     url.UserPassword(user, password),
+    Host:     fmt.Sprintf("%s:%d", host, port),
+    Path:     databaseName,
+    RawQuery: rawQuery.Encode(),
+}
+sql.Open("vertica", query.String())
+```
+
 ### Performing a simple query
 
 Performing a simple query is merely a matter of using that connection to create a query and iterate its results.
