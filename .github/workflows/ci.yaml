@@ -32,6 +32,8 @@ jobs:
           go test -race . -args --locator localhost:5433 --user dbadmin
           go test -race . -args --locator localhost:5433 --user dbadmin --use_prepared_statements=0
           go test -race ./logger
+      - name: Run tests (with TLS)
+        run: |
           docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "SELECT SET_CONFIG_PARAMETER('SSLPrivateKey', '`cat ./resources/tests/ssl/root.key`');"
           docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "SELECT SET_CONFIG_PARAMETER('SSLCertificate', '`cat ./resources/tests/ssl/root.crt`');"
           # docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "ALTER DATABASE docker SET SSLCA='`cat ./resources/tests/ssl/root.crt`';"

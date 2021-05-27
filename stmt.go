@@ -375,6 +375,8 @@ func (s *stmt) cleanQuotes(val string) string {
 func (s *stmt) formatArg(arg driver.NamedValue) string {
 	var replaceStr string
 	switch v := arg.Value.(type) {
+	case nil:
+		replaceStr = "NULL"
 	case int64, float64:
 		replaceStr = fmt.Sprintf("%v", v)
 	case string:
@@ -386,13 +388,14 @@ func (s *stmt) formatArg(arg driver.NamedValue) string {
 			replaceStr = "false"
 		}
 	case time.Time:
-		replaceStr = fmt.Sprintf("%02d-%02d-%02d %02d:%02d:%02d",
+		replaceStr = fmt.Sprintf("'%02d-%02d-%02d %02d:%02d:%02d.%09d'",
 			v.Year(),
 			v.Month(),
 			v.Day(),
 			v.Hour(),
 			v.Minute(),
-			v.Second())
+			v.Second(),
+			v.Nanosecond())
 	default:
 		replaceStr = "?unknown_type?"
 	}

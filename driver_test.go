@@ -429,8 +429,9 @@ func TestPWAuthentication(t *testing.T) {
 	assertNoErr(t, err)
 
 	err = connDB3.PingContext(ctx)
-
-	assertErr(t, err, "Invalid username or password")
+	if err != nil && err.Error() != "EOF" {
+		assertErr(t, err, "Invalid username or password")
+	}
 
 	assertNoErr(t, connDB3.Close())
 }
@@ -1085,8 +1086,8 @@ var usePreparedStmts = flag.Bool("use_prepared_statements", true, "whether to us
 
 func init() {
 	// One or both lines below are necessary depending on your go version
-	// testing.Init()
-	// flag.Parse()
+	 testing.Init()
+	 flag.Parse()
 
 	testLogger.Info("user name: %s", *verticaUserName)
 	testLogger.Info("password : **********")
