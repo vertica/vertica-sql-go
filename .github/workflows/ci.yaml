@@ -33,10 +33,10 @@ jobs:
         run: |
           ./resources/tests/genCerts.sh
 
-      - name: Run tests
+      - name: Run tests without TLS
         run: |
           go test -race . -args --locator localhost:5433 --user dbadmin
-          # go test -race . -args --locator localhost:5433 --user dbadmin --use_prepared_statements=0
+          go test -race . -args --locator localhost:5433 --user dbadmin --use_prepared_statements=0
           go test -race ./logger
 
       - name: Turning on TLS in the database

@@ -1044,7 +1044,7 @@ func TestEnableResultCache(t *testing.T) {
 	testEnableResultCachePageSized(t, connDB, vCtx, 0)
 }
 
-// func TestConnectionClosure(t *testing.T) {
+//func TestConnectionClosure(t *testing.T) {
 // 	adminDB := openConnection(t, "test_connection_closed_pre")
 // 	defer closeConnection(t, adminDB, "test_connection_closed_post")
 // 	const userQuery = "select 1 as test"
