@@ -7,7 +7,7 @@
 : ${ORG:=SQL}
 : ${CN:=localhost}
 
-: ${CERT_LOC:=./resources/tests/ssl}￼
+: ${CERT_LOC:=./resources/tests/ssl}
 [ -d "$CERT_LOC" ] || mkdir -p "$CERT_LOC"
 cd "$CERT_LOC" || { echo "Error: Failed to cd into $CERT_LOC"; exit 1; }
 
