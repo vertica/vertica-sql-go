@@ -75,7 +75,7 @@ Example:
 
 ```bash
 export VERTICA_SQL_GO_LOG_FILE=/var/log/vertica-sql-go.log
-``` 
+```
 
 ### Creating a connection
 
@@ -100,6 +100,7 @@ Currently supported query arguments are:
 | tlsmode            | the ssl/tls policy for this connection | 'none' (default) = don't use SSL/TLS for this connection |
 |                |                                    | 'server' = server must support SSL/TLS, but skip verification **(INSECURE!)** |
 |                |                                    | 'server-strict' = server must support SSL/TLS |
+|                |                                    | {customName} = use custom registered `tls.Config` (see "Using custom TLS config" section below) |
 | backup_server_node    | a list of backup hosts for the client to try to connect if the primary host is unreachable | a comma-seperated list of backup host-port pairs. E.g.<br> 'host1:port1,host2:port2,host3:port3'  |
 
 To ping the server and validate a connection (as the connection isn't necessarily created at that moment), simply call the *PingContext()* method.
@@ -111,6 +112,39 @@ err = connDB.PingContext(ctx)
 ```
 
 If there is an error in connection, the error result will be non-nil and contain a description of whatever problem occurred.
+
+### Using custom TLS config
+
+Custom TLS config(s) can be registered for TLS / SSL encrypted connection to the server.
+Here is an example of registering and using a `tls.Config`:
+
+```Go
+import vertigo "github.com/vertica/vertica-sql-go"
+
+// Register tls.Config
+rootCertPool := x509.NewCertPool()
+pem, err := ioutil.ReadFile("/certs/ca.crt")
+if err != nil {
+    LOG.Warningln("ERROR: failed reading cert file", err)
+}
+if ok := rootCertPool.AppendCertsFromPEM(pem); !ok {
+    LOG.Warningln("ERROR: Failed to append PEM")
+}
+tlsConfig := &tls.Config{RootCAs: rootCertPool, ServerName: host}
+vertigo.RegisterTLSConfig("myCustomName", tlsConfig)
+
+// Connect using tls.Config
+var rawQuery = url.Values{}
+rawQuery.Add("tlsmode", "myCustomName")
+var query = url.URL{
+    Scheme:   "vertica",
+    User:     url.UserPassword(user, password),
+    Host:     fmt.Sprintf("%s:%d", host, port),
+    Path:     databaseName,
+    RawQuery: rawQuery.Encode(),
+}
+sql.Open("vertica", query.String())
+```
 
 ### Performing a simple query
 

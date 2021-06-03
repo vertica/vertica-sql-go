@@ -34,7 +34,10 @@ package vertigo
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -157,6 +160,27 @@ func closeConnection(t *testing.T, connDB *sql.DB, teardownScript ...interface{}
 		assertExecSQL(t, connDB, teardownScript...)
 	}
 	assertNoErr(t, connDB.Close())
+}
+
+func TestCustomTLSConfiguration(t *testing.T) {
+
+	if *tlsMode != "custom" {
+		return
+	}
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+	rows, err := connDB.QueryContext(ctx, "SELECT ssl_state FROM sessions")
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	var sslState string
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&sslState))
+		if strings.ToLower(sslState) == "mutual" {
+			return
+		}
+	}
+	t.Fatalf("sslstate mutual not found: %s", sslState)
 }
 
 func TestBasicQuery(t *testing.T) {
@@ -414,25 +438,23 @@ func TestConnFailover(t *testing.T) {
 }
 
 func TestPWAuthentication(t *testing.T) {
+
 	connDB := openConnection(t, "test_pw_authentication_pre")
 	defer closeConnection(t, connDB, "test_pw_authentication_post")
 
 	// Let the user try to login now.
 	connDB2, err := sql.Open("vertica", otherConnectString)
 	assertNoErr(t, err)
-
 	assertNoErr(t, connDB2.PingContext(ctx))
 	assertNoErr(t, connDB2.Close())
 
 	// Try it again with a bad password
 	connDB3, err := sql.Open("vertica", badConnectString)
 	assertNoErr(t, err)
-
 	err = connDB3.PingContext(ctx)
 	if err != nil && err.Error() != "EOF" {
 		assertErr(t, err, "Invalid username or password")
 	}
-
 	assertNoErr(t, connDB3.Close())
 }
 
@@ -1023,25 +1045,25 @@ func TestEnableResultCache(t *testing.T) {
 }
 
 //func TestConnectionClosure(t *testing.T) {
-//	adminDB := openConnection(t, "test_connection_closed_pre")
-//	defer closeConnection(t, adminDB, "test_connection_closed_post")
-//	const userQuery = "select 1 as test"
+// 	adminDB := openConnection(t, "test_connection_closed_pre")
+// 	defer closeConnection(t, adminDB, "test_connection_closed_post")
+// 	const userQuery = "select 1 as test"
 //
-//	userDB, _ := sql.Open("vertica", otherConnectString)
-//	defer userDB.Close()
-//	rows, err := userDB.Query(userQuery)
-//	assertNoErr(t, err)
-//	rows.Close()
-//	adminDB.Query("select close_user_sessions('TestGuy')")
-//	rows, err = userDB.Query(userQuery)
-//	// Depending on Go version this second query may or may not error
-//	if err == nil {
-//		rows.Close()
-//	}
-//	rows, err = userDB.Query(userQuery)
-//	assertNoErr(t, err) // Should definitely have a working connection again here
-//	rows.Close()
-//}
+// 	userDB, _ := sql.Open("vertica", otherConnectString)
+// 	defer userDB.Close()
+// 	rows, err := userDB.Query(userQuery)
+// 	assertNoErr(t, err)
+// 	rows.Close()
+// 	adminDB.Query("select close_user_sessions('TestGuy')")
+// 	rows, err = userDB.Query(userQuery)
+// 	// Depending on Go version this second query may or may not error
+// 	if err == nil {
+// 		rows.Close()
+// 	}
+// 	rows, err = userDB.Query(userQuery)
+// 	assertNoErr(t, err) // Should definitely have a working connection again here
+// 	rows.Close()
+// }
 
 func TestConcurrentStatementQuery(t *testing.T) {
 	connDB := openConnection(t, "test_stmt_ordering_threads_pre")
@@ -1081,13 +1103,60 @@ func TestLockOnError(t *testing.T) {
 var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
 var verticaPassword = flag.String("password", os.Getenv("VERTICA_TEST_PASSWORD"), "Vertica password for this user")
 var verticaHostPort = flag.String("locator", "localhost:5433", "Vertica's host and port")
-var tlsMode = flag.String("tlsmode", "none", "SSL/TLS mode (none, server, server-strict)")
+var tlsMode = flag.String("tlsmode", "none", "SSL/TLS mode (none, server, server-strict, custom)")
 var usePreparedStmts = flag.Bool("use_prepared_statements", true, "whether to use prepared statements for all queries/executes")
+
+const (
+	keyPath    string = "resources/tests/ssl/client.key"
+	crtPath    string = "resources/tests/ssl/client.crt"
+	caCertPath string = "resources/tests/ssl/rootCA.crt"
+)
+
+func getCerts(crtPath, keyPath string) ([]tls.Certificate, error) {
+	if _, err := os.Stat(crtPath); err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(keyPath); err != nil {
+		return nil, err
+	}
+	cert, err := tls.LoadX509KeyPair(crtPath, keyPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return []tls.Certificate{cert}, nil
+}
+func getTlsConfig() (*tls.Config, error) {
+
+	certs, err := getCerts(crtPath, keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("could not get certs: %v", err)
+	}
+	caCert, err := ioutil.ReadFile(caCertPath)
+	if err != nil {
+		return nil, fmt.Errorf("could not read cacertfile: %v", err)
+	}
+	caCertPool := x509.NewCertPool()
+	if !caCertPool.AppendCertsFromPEM(caCert) {
+		return nil, errors.New("could not append certs from cacert")
+	}
+
+	tlsConfig := &tls.Config{
+		RootCAs:      caCertPool,
+		Certificates: certs,
+		ServerName:   "localhost",
+	}
+	tlsConfig.BuildNameToCertificate()
+	return tlsConfig, nil
+}
 
 func init() {
 	// One or both lines below are necessary depending on your go version
-	 testing.Init()
-	 flag.Parse()
+	testing.Init()
+	flag.Parse()
+
+	// For debugging.
+	// logger.SetLogLevel(logger.INFO)
 
 	testLogger.Info("user name: %s", *verticaUserName)
 	testLogger.Info("password : **********")
@@ -1102,7 +1171,18 @@ func init() {
 		usePreparedStmtsString += "0"
 	}
 
-	myDBConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@" + *verticaHostPort + "/" + *verticaUserName + "?" + usePreparedStmtsString + "&tlsMode=" + *tlsMode
+	if *tlsMode == "custom" {
+
+		testLogger.Info("loading tls config")
+		tlsConfig, err := getTlsConfig()
+		if err != nil {
+			testLogger.Fatal("could not get tls-config: %v", err)
+		}
+		if err := RegisterTLSConfig("custom", tlsConfig); err != nil {
+			testLogger.Fatal("could not register tls config: %v", err)
+		}
+	}
+	myDBConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@" + *verticaHostPort + "/" + *verticaUserName + "?" + usePreparedStmtsString + "&tlsmode=" + *tlsMode
 	otherConnectString = "vertica://TestGuy:TestGuyPass@" + *verticaHostPort + "/TestGuy?tlsmode=" + *tlsMode
 	badConnectString = "vertica://TestGuy:TestGuyBadPass@" + *verticaHostPort + "/TestGuy?tlsmode=" + *tlsMode
 	failoverConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@badHost" + "/" + *verticaUserName + "?backup_server_node=abc.com:100000," + *verticaHostPort + ",localhost:port"
