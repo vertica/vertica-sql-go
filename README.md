@@ -75,7 +75,7 @@ Example:
 
 ```bash
 export VERTICA_SQL_GO_LOG_FILE=/var/log/vertica-sql-go.log
-``` 
+```
 
 ### Creating a connection
 
@@ -132,7 +132,6 @@ if ok := rootCertPool.AppendCertsFromPEM(pem); !ok {
 }
 tlsConfig := &tls.Config{RootCAs: rootCertPool, ServerName: host}
 vertigo.RegisterTLSConfig("myCustomName", tlsConfig)
-}
 
 // Connect using tls.Config
 var rawQuery = url.Values{}
