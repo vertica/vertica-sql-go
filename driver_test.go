@@ -1100,6 +1100,27 @@ func TestLockOnError(t *testing.T) {
 	assertNoErr(t, err)
 }
 
+func TestUnexpectedResult(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+
+	_, err := connDB.Query("select throw_error('whatever')")
+	assertErr(t, err, "ERROR: whatever")
+
+	res, err := connDB.Query("select throw_error('whatever')")
+	if err == nil {
+		// Second query returns result of Ping query, check it
+		var test string
+		assertTrue(t, res.Next())
+		err = res.Scan(&test)
+		assertNoErr(t, err)
+		assertEqual(t, "1", test)
+		assertTrue(t, !res.Next())
+	}
+	// Finally fail test by correct assert
+	assertErr(t, err, "ERROR: whatever")
+}
+
 var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
 var verticaPassword = flag.String("password", os.Getenv("VERTICA_TEST_PASSWORD"), "Vertica password for this user")
 var verticaHostPort = flag.String("locator", "localhost:5433", "Vertica's host and port")
