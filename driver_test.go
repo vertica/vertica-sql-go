@@ -1107,17 +1107,7 @@ func TestUnexpectedResult(t *testing.T) {
 	_, err := connDB.Query("select throw_error('whatever')")
 	assertErr(t, err, "ERROR: whatever")
 
-	res, err := connDB.Query("select throw_error('whatever')")
-	if err == nil {
-		// Second query returns result of Ping query, check it
-		var test string
-		assertTrue(t, res.Next())
-		err = res.Scan(&test)
-		assertNoErr(t, err)
-		assertEqual(t, "1", test)
-		assertTrue(t, !res.Next())
-	}
-	// Finally fail test by correct assert
+	_, err = connDB.Query("select throw_error('whatever')")
 	assertErr(t, err, "ERROR: whatever")
 }
 

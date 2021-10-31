@@ -186,6 +186,10 @@ func (v *connection) Ping(ctx context.Context) error {
 	if err != nil {
 		return driver.ErrBadConn
 	}
+	var val interface{}
+	if err := rows.Next([]driver.Value{val}); err != nil {
+		return driver.ErrBadConn
+	}
 	rows.Close()
 	return nil
 }
