@@ -20,7 +20,7 @@ jobs:
           go-version: ${{ matrix.go-version }}
       - name: Set up a Vertica server
         env:
-          VERTICA_CE_URL: "https://vertica-community-edition-for-testing.s3.amazonaws.com/XCz9cp7m/vertica-10.1.1-0.x86_64.RHEL6.rpm"
+          VERTICA_CE_URL: "https://vertica-community-edition-for-testing.s3.amazonaws.com/XCz9cp7m/vertica-11.0.1-0.x86_64.RHEL6.rpm"
         run: |
           git clone https://github.com/jbfavre/docker-vertica.git
           curl $VERTICA_CE_URL --create-dirs -o docker-vertica/packages/vertica-ce.latest.rpm
@@ -41,11 +41,10 @@ jobs:
 
       - name: Turning on TLS in the database
         run: |
-          docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "SELECT SET_CONFIG_PARAMETER('SSLPrivateKey', '`cat ./resources/tests/ssl/server.key`');"
-          docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "SELECT SET_CONFIG_PARAMETER('SSLCertificate', '`cat ./resources/tests/ssl/server.crt`');"
-          docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "ALTER DATABASE docker SET EnableSSL=1;"
-          docker exec -u dbadmin vertica_docker /opt/vertica/bin/admintools --tool stop_db --database docker
-          docker exec -u dbadmin vertica_docker /opt/vertica/bin/admintools --tool start_db --database docker
+          docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "CREATE CA CERTIFICATE root_ca AS '`cat ./resources/tests/ssl/rootCA.crt`';"
+          docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "CREATE KEY server_key TYPE 'RSA' AS '`cat ./resources/tests/ssl/server.key`';"
+          docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "CREATE CERTIFICATE server AS '`cat ./resources/tests/ssl/server.crt`' KEY server_key;"
+          docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "ALTER TLS CONFIGURATION server CERTIFICATE server TLSMODE 'ENABLE';"
 
       - name: Testing with --tlsmode=server
         run: |
@@ -54,9 +53,7 @@ jobs:
 
       - name: Setting SSLCa in the database
         run: |
-          docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "SELECT SET_CONFIG_PARAMETER('SSLCa', '`cat ./resources/tests/ssl/rootCA.crt`');"
-          docker exec -u dbadmin vertica_docker /opt/vertica/bin/admintools --tool stop_db --database docker
-          docker exec -u dbadmin vertica_docker /opt/vertica/bin/admintools --tool start_db --database docker
+          docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "ALTER TLS CONFIGURATION server ADD CA CERTIFICATES root_ca TLSMODE 'VERIFY_CA';"
 
       - name: Testing with --tlsmode=custom
         run: |
