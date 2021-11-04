@@ -162,11 +162,7 @@ func closeConnection(t *testing.T, connDB *sql.DB, teardownScript ...interface{}
 	assertNoErr(t, connDB.Close())
 }
 
-func TestCustomTLSConfiguration(t *testing.T) {
-
-	if *tlsMode != "custom" {
-		return
-	}
+func TestTLSConfiguration(t *testing.T) {
 	connDB := openConnection(t)
 	defer closeConnection(t, connDB)
 	rows, err := connDB.QueryContext(ctx, "SELECT ssl_state FROM sessions")
@@ -176,11 +172,17 @@ func TestCustomTLSConfiguration(t *testing.T) {
 	var sslState string
 	for rows.Next() {
 		assertNoErr(t, rows.Scan(&sslState))
-		if strings.ToLower(sslState) == "mutual" {
-			return
+		switch *tlsMode {
+		case "none":
+			assertEqual(t, sslState, "None")
+		case "server", "server-strict":
+			assertEqual(t, sslState, "Server")
+		case "custom":
+			assertEqual(t, sslState, "Mutual")
+		default:
+			t.Fatalf("tlsmode is set to '%s' but session ssl_state is '%s'", *tlsMode, sslState)
 		}
 	}
-	t.Fatalf("sslstate mutual not found: %s", sslState)
 }
 
 func TestBasicQuery(t *testing.T) {
