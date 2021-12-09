@@ -412,7 +412,7 @@ func (v *connection) handshake() error {
 
 		switch msg := bMsg.(type) {
 		case *msgs.BEErrorMsg:
-			return msg.ToErrorType()
+			return errorMsgToVError(msg)
 		case *msgs.BEReadyForQueryMsg:
 			v.transactionState = msg.TransactionState
 			return nil

@@ -1,4 +1,4 @@
-package msgs
+package vertigo
 
 // Copyright (c) 2019-2021 Micro Focus or one of its affiliates.
 //
@@ -34,10 +34,12 @@ package msgs
 
 import (
 	"fmt"
+
+	"github.com/vertica/vertica-sql-go/msgs"
 )
 
-// BEErrorMsg docs
-type BEErrorMsg struct {
+// VError represents an error reported by the Vertica server.
+type VError struct {
 	InternalQuery    string
 	Severity         string
 	Message          string
@@ -53,55 +55,25 @@ type BEErrorMsg struct {
 	ErrorCode        string
 }
 
-// CreateFromMsgBody docs
-func (b *BEErrorMsg) CreateFromMsgBody(buf *msgBuffer) (BackEndMsg, error) {
+func (ve *VError) Error() string {
+	return fmt.Sprintf("%s %s: [%s] %s", ve.Severity, ve.ErrorCode, ve.SQLState, ve.Message)
+}
 
-	res := &BEErrorMsg{}
-
-	for {
-		fieldType, fieldStr := buf.readTaggedString()
-
-		if fieldType == 0 {
-			buf.readByte() // There's an empty null terminator here we have to read.
-			break
-		}
-		switch fieldType {
-		case 'q':
-			res.InternalQuery = fieldStr
-		case 'S':
-			res.Severity = fieldStr
-		case 'M':
-			res.Message = fieldStr
-		case 'C':
-			res.SQLState = fieldStr
-		case 'D':
-			res.Detail = fieldStr
-		case 'H':
-			res.Hint = fieldStr
-		case 'P':
-			res.Position = fieldStr
-		case 'W':
-			res.Where = fieldStr
-		case 'p':
-			res.InternalPosition = fieldStr
-		case 'R':
-			res.Routine = fieldStr
-		case 'F':
-			res.File = fieldStr
-		case 'L':
-			res.Line = fieldStr
-		case 'V':
-			res.ErrorCode = fieldStr
-		}
+// Convert a wire protocol error message to a *VError
+func errorMsgToVError(m *msgs.BEErrorMsg) *VError {
+	return &VError{
+		InternalQuery:    m.InternalQuery,
+		Severity:         m.Severity,
+		Message:          m.Message,
+		SQLState:         m.SQLState,
+		Detail:           m.Detail,
+		Hint:             m.Hint,
+		Position:         m.Position,
+		Where:            m.Where,
+		InternalPosition: m.InternalPosition,
+		Routine:          m.Routine,
+		File:             m.File,
+		Line:             m.Line,
+		ErrorCode:        m.ErrorCode,
 	}
-
-	return res, nil
-}
-
-func (b *BEErrorMsg) String() string {
-	return fmt.Sprintf("ErrorResponse: %s %s: [%s] %s", b.Severity, b.ErrorCode, b.SQLState, b.Message)
-}
-
-func init() {
-	registerBackEndMsgType('E', &BEErrorMsg{})
 }

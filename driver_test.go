@@ -455,6 +455,14 @@ func TestPWAuthentication(t *testing.T) {
 	assertNoErr(t, err)
 	err = connDB3.PingContext(ctx)
 	if err != nil && err.Error() != "EOF" {
+		verr, ok := err.(*VError)
+		if !ok {
+			t.Fatalf("failed to extract error VError: %v", err)
+		}
+		assertEqual(t, verr.SQLState, "28000")
+		assertEqual(t, verr.Severity, "FATAL")
+		assertEqual(t, verr.Routine, "auth_failed")
+		assertEqual(t, verr.ErrorCode, "3781")
 		assertErr(t, err, "Invalid username or password")
 	}
 	assertNoErr(t, connDB3.Close())
@@ -994,8 +1002,15 @@ func TestHangAfterError(t *testing.T) {
 	assertNoNext(t, rows)
 
 	rows, err = connDB.QueryContext(ctx, "SELECT 1+'abcd'")
-
-	assertErr(t, err, "Invalid")
+	verr, ok := err.(*VError)
+	if !ok {
+		t.Fatalf("failed to extract error VError: %v", err)
+	}
+	assertEqual(t, verr.SQLState, "22V02")
+	assertEqual(t, verr.Severity, "ERROR")
+	assertEqual(t, verr.Routine, "scanint8")
+	assertEqual(t, verr.ErrorCode, "3681")
+	assertErr(t, err, "Invalid input syntax for integer")
 
 	rows, err = connDB.QueryContext(ctx, "SELECT 2")
 	defer rows.Close()
@@ -1088,6 +1103,14 @@ func TestInvalidDDLStatement(t *testing.T) {
 	connDB := openConnection(t)
 	defer closeConnection(t, connDB)
 	_, err := connDB.Exec("DROP VIEW DOESNOTEXISTVIEW")
+	verr, ok := err.(*VError)
+	if !ok {
+		t.Fatalf("failed to extract error VError: %v", err)
+	}
+	assertEqual(t, verr.SQLState, "42704")
+	assertEqual(t, verr.Severity, "ROLLBACK")
+	assertEqual(t, verr.Routine, "ProcessDrop")
+	assertEqual(t, verr.ErrorCode, "5446")
 	assertErr(t, err, "does not exist")
 }
 
@@ -1096,6 +1119,14 @@ func TestLockOnError(t *testing.T) {
 	defer closeConnection(t, connDB)
 
 	_, err := connDB.Query("select throw_error('whatever')")
+	verr, ok := err.(*VError)
+	if !ok {
+		t.Fatalf("failed to extract error VError: %v", err)
+	}
+	assertEqual(t, verr.SQLState, "22V23")
+	assertEqual(t, verr.Severity, "ERROR")
+	assertEqual(t, verr.Routine, "ThrowUserError")
+	assertEqual(t, verr.ErrorCode, "7137")
 	assertErr(t, err, "ERROR: whatever")
 
 	_, err = connDB.QueryContext(ctx, "select 1")
