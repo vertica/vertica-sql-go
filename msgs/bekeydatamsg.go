@@ -53,7 +53,7 @@ func (m *BEKeyDataMsg) CreateFromMsgBody(buf *msgBuffer) (BackEndMsg, error) {
 }
 
 func (m *BEKeyDataMsg) String() string {
-	return fmt.Sprintf("KeyData: BackendPID=%d, CancelKey=%08X'", m.BackendPID, m.CancelKey)
+	return fmt.Sprintf("KeyData: BackendPID=%d, CancelKey=%08X", m.BackendPID, m.CancelKey)
 }
 
 func init() {
