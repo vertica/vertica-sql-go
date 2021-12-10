@@ -425,7 +425,7 @@ func (s *stmt) evaluateErrorMsg(msg *msgs.BEErrorMsg) error {
 	if msg.Severity == "ROLLBACK" {
 		s.rolledBack = true
 	}
-	return msg.ToErrorType()
+	return errorMsgToVError(msg)
 }
 
 func (s *stmt) prepareAndDescribe() error {
@@ -470,7 +470,7 @@ func (s *stmt) prepareAndDescribe() error {
 		switch msg := bMsg.(type) {
 		case *msgs.BEErrorMsg:
 			s.conn.sync()
-			return msg.ToErrorType()
+			return errorMsgToVError(msg)
 		case *msgs.BEParseCompleteMsg:
 			s.parseState = parseStateParsed
 		case *msgs.BERowDescMsg:
