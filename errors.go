@@ -1,4 +1,4 @@
-package msgs
+package vertigo
 
 // Copyright (c) 2019-2022 Micro Focus or one of its affiliates.
 //
@@ -32,30 +32,48 @@ package msgs
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-import "fmt"
+import (
+	"fmt"
 
-// FEVerifyLoadFiles docs
-type FEVerifyLoadFiles struct {
-	FileNames []string
-	FileSizes []uint64
+	"github.com/vertica/vertica-sql-go/msgs"
+)
+
+// VError represents an error reported by the Vertica server.
+type VError struct {
+	InternalQuery    string
+	Severity         string
+	Message          string
+	SQLState         string
+	Detail           string
+	Hint             string
+	Position         string
+	Where            string
+	InternalPosition string
+	Routine          string
+	File             string
+	Line             string
+	ErrorCode        string
 }
 
-// Flatten docs
-func (m *FEVerifyLoadFiles) Flatten() ([]byte, byte) {
+func (ve *VError) Error() string {
+	return fmt.Sprintf("%s %s: [%s] %s", ve.Severity, ve.ErrorCode, ve.SQLState, ve.Message)
+}
 
-	buf := newMsgBuffer()
-
-	// TODO: Sanity check equal length of arrays or rewrite as a pair.
-	buf.appendUint16(uint16(len(m.FileNames)))
-
-	for ct := range m.FileNames {
-		buf.appendString(m.FileNames[ct])
-		buf.appendUint64(m.FileSizes[ct])
+// Convert a wire protocol error message to a *VError
+func errorMsgToVError(m *msgs.BEErrorMsg) *VError {
+	return &VError{
+		InternalQuery:    m.InternalQuery,
+		Severity:         m.Severity,
+		Message:          m.Message,
+		SQLState:         m.SQLState,
+		Detail:           m.Detail,
+		Hint:             m.Hint,
+		Position:         m.Position,
+		Where:            m.Where,
+		InternalPosition: m.InternalPosition,
+		Routine:          m.Routine,
+		File:             m.File,
+		Line:             m.Line,
+		ErrorCode:        m.ErrorCode,
 	}
-
-	return buf.bytes(), 'F'
-}
-
-func (m *FEVerifyLoadFiles) String() string {
-	return fmt.Sprintf("VerifyLoadFiles: %d file(s) verified", len(m.FileNames))
 }

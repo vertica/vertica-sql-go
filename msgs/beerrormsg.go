@@ -1,6 +1,6 @@
 package msgs
 
-// Copyright (c) 2019-2021 Micro Focus or one of its affiliates.
+// Copyright (c) 2019-2022 Micro Focus or one of its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -38,12 +38,19 @@ import (
 
 // BEErrorMsg docs
 type BEErrorMsg struct {
-	Severity string
-	SQLCode  string
-	Message  string
-	File     string
-	Line     string
-	Routine  string
+	InternalQuery    string
+	Severity         string
+	Message          string
+	SQLState         string
+	Detail           string
+	Hint             string
+	Position         string
+	Where            string
+	InternalPosition string
+	Routine          string
+	File             string
+	Line             string
+	ErrorCode        string
 }
 
 // CreateFromMsgBody docs
@@ -58,33 +65,41 @@ func (b *BEErrorMsg) CreateFromMsgBody(buf *msgBuffer) (BackEndMsg, error) {
 			buf.readByte() // There's an empty null terminator here we have to read.
 			break
 		}
-
 		switch fieldType {
+		case 'q':
+			res.InternalQuery = fieldStr
 		case 'S':
 			res.Severity = fieldStr
-		case 'C':
-			res.SQLCode = fieldStr
 		case 'M':
 			res.Message = fieldStr
+		case 'C':
+			res.SQLState = fieldStr
+		case 'D':
+			res.Detail = fieldStr
+		case 'H':
+			res.Hint = fieldStr
+		case 'P':
+			res.Position = fieldStr
+		case 'W':
+			res.Where = fieldStr
+		case 'p':
+			res.InternalPosition = fieldStr
+		case 'R':
+			res.Routine = fieldStr
 		case 'F':
 			res.File = fieldStr
 		case 'L':
 			res.Line = fieldStr
-		case 'R':
-			res.Routine = fieldStr
+		case 'V':
+			res.ErrorCode = fieldStr
 		}
-
 	}
 
 	return res, nil
 }
 
 func (b *BEErrorMsg) String() string {
-	return fmt.Sprintf("Error: [%s] %s", b.SQLCode, b.Message)
-}
-
-func (b *BEErrorMsg) ToErrorType() error {
-	return fmt.Errorf(b.String())
+	return fmt.Sprintf("ErrorResponse: %s %s: [%s] %s", b.Severity, b.ErrorCode, b.SQLState, b.Message)
 }
 
 func init() {

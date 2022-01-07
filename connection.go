@@ -1,6 +1,6 @@
 package vertigo
 
-// Copyright (c) 2019-2021 Micro Focus or one of its affiliates.
+// Copyright (c) 2019-2022 Micro Focus or one of its affiliates.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -55,6 +55,42 @@ import (
 var (
 	connectionLogger = logger.New("connection")
 )
+
+const (
+	tlsModeServer       = "server"
+	tlsModeServerStrict = "server-strict"
+	tlsModeNone         = "none"
+)
+
+type _tlsConfigs struct {
+	m map[string]*tls.Config
+	sync.RWMutex
+}
+
+func (t *_tlsConfigs) add(name string, config *tls.Config) error {
+	t.Lock()
+	defer t.Unlock()
+	t.m[name] = config
+	return nil
+}
+
+func (t *_tlsConfigs) get(name string) (*tls.Config, bool) {
+	t.RLock()
+	defer t.RUnlock()
+	conf, ok := t.m[name]
+	return conf, ok
+}
+
+var tlsConfigs = &_tlsConfigs{m: make(map[string]*tls.Config)}
+
+//  db, err := sql.Open("vertica", "user@tcp(localhost:3306)/test?tlsmode=custom")
+//  reserved modes: 'server', 'server-strict' or 'none'
+func RegisterTLSConfig(name string, config *tls.Config) error {
+	if name == tlsModeServer || name == tlsModeServerStrict || name == tlsModeNone {
+		return fmt.Errorf("config name '%s' is reserved therefore cannot be used", name)
+	}
+	return tlsConfigs.add(name, config)
+}
 
 // Connection represents a connection to Vertica
 type connection struct {
@@ -150,6 +186,10 @@ func (v *connection) Ping(ctx context.Context) error {
 	if err != nil {
 		return driver.ErrBadConn
 	}
+	var val interface{}
+	if err := rows.Next([]driver.Value{val}); err != nil {
+		return driver.ErrBadConn
+	}
 	rows.Close()
 	return nil
 }
@@ -200,7 +240,7 @@ func newConnection(connString string) (*connection, error) {
 	// Read SSL/TLS flag.
 	sslFlag := strings.ToLower(result.connURL.Query().Get("tlsmode"))
 	if sslFlag == "" {
-		sslFlag = "none"
+		sslFlag = tlsModeNone
 	}
 
 	result.conn, err = result.establishSocketConnection()
@@ -216,7 +256,7 @@ func newConnection(connString string) (*connection, error) {
 		}
 	}
 
-	if sslFlag != "none" {
+	if sslFlag != tlsModeNone {
 		if err = result.initializeSSL(sslFlag); err != nil {
 			return nil, err
 		}
@@ -372,7 +412,7 @@ func (v *connection) handshake() error {
 
 		switch msg := bMsg.(type) {
 		case *msgs.BEErrorMsg:
-			return msg.ToErrorType()
+			return errorMsgToVError(msg)
 		case *msgs.BEReadyForQueryMsg:
 			v.transactionState = msg.TransactionState
 			return nil
@@ -569,21 +609,24 @@ func (v *connection) initializeSSL(sslFlag string) error {
 	}
 
 	switch sslFlag {
-	case "server":
+	case tlsModeServer:
 		connectionLogger.Info("enabling SSL/TLS server mode")
 		v.conn = tls.Client(v.conn, &tls.Config{InsecureSkipVerify: true})
-	case "server-strict":
+	case tlsModeServerStrict:
 		connectionLogger.Info("enabling SSL/TLS server strict mode")
 		v.conn = tls.Client(v.conn, &tls.Config{ServerName: v.connURL.Hostname()})
 	default:
-		err := fmt.Errorf("unsupported tlsmode flag: %s - should be 'server', 'server-strict' or 'none'", sslFlag)
-		connectionLogger.Error(err.Error())
-		return err
+		// Custom mode is used for mutual ssl mode
+		connectionLogger.Info("enabling SSL/TLS custom mode")
+		config, ok := tlsConfigs.get(sslFlag)
+		if !ok {
+			err := fmt.Errorf("tls config %s not registered. See 'Using custom TLS config' in the README.md file", sslFlag)
+			connectionLogger.Error(err.Error())
+			return err
+		}
+		v.conn = tls.Client(v.conn, config)
+		return nil
 	}
-	// 	case "mutual":
-	// 		err = fmt.Errorf("mutual ssl mode not currently supported")
-	// 	default:
-	// 		err = fmt.Errorf("unsupported ssl value in connect string: %s", sslFlag)
 
 	return nil
 }
