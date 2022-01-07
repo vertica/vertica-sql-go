@@ -52,7 +52,7 @@ import (
 )
 
 type rowStore interface {
-	AddRow(msg *msgs.BEDataRowMsg)
+	AddRow(msg *msgs.BEDataRowMsg) error
 	GetRow() *msgs.BEDataRowMsg
 	Peek() *msgs.BEDataRowMsg
 	Close() error
@@ -196,12 +196,12 @@ func parseTimestampTZColumn(fullString string) (driver.Value, error) {
 	return result, err
 }
 
-func (r *rows) finalize() {
-	r.resultData.Finalize()
+func (r *rows) finalize() error {
+	return r.resultData.Finalize()
 }
 
-func (r *rows) addRow(rowData *msgs.BEDataRowMsg) {
-	r.resultData.AddRow(rowData)
+func (r *rows) addRow(rowData *msgs.BEDataRowMsg) error {
+	return r.resultData.AddRow(rowData)
 }
 
 func newRows(ctx context.Context, columnsDefsMsg *msgs.BERowDescMsg, tzOffset string) *rows {

@@ -47,9 +47,16 @@ func TestFileCache(t *testing.T) {
 		}
 		for i := 0; i < rowCount; i++ {
 			row := msgs.BEDataRowMsg([]byte("testRow"))
-			cache.AddRow(&row)
+			err = cache.AddRow(&row)
+			if err != nil {
+				t.Fatalf("Unable to add a row to the cache: %s", err)
+			}
 		}
-		cache.Finalize()
+		err = cache.Finalize()
+		if err != nil {
+			t.Fatalf("Unable to finalize the cache: %s", err)
+		}
+
 		if cache.Peek() == nil {
 			t.Error("Expected a row with Peek")
 		}
@@ -69,9 +76,15 @@ func TestFileCache(t *testing.T) {
 		}
 		for i := 0; i < rowCount; i++ {
 			row := msgs.BEDataRowMsg([]byte("testRow"))
-			cache.AddRow(&row)
+			err = cache.AddRow(&row)
+			if err != nil {
+				t.Fatalf("Unable to add a row to the cache: %s", err)
+			}
 		}
-		cache.Finalize()
+		err = cache.Finalize()
+		if err != nil {
+			t.Fatalf("Unable to finalize the cache: %s", err)
+		}
 		if cache.Peek() == nil {
 			t.Error("Expected a row with Peek")
 		}
