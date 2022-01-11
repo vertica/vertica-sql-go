@@ -51,8 +51,9 @@ func NewMemoryCache(size int) *MemoryCache {
 }
 
 // AddRow adds a row to the store
-func (m *MemoryCache) AddRow(msg *msgs.BEDataRowMsg) {
+func (m *MemoryCache) AddRow(msg *msgs.BEDataRowMsg) error {
 	m.resultData = append(m.resultData, msg)
+	return nil
 }
 
 // Finalize signals the end of new rows, a noop for the memory cache
