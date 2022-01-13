@@ -201,6 +201,11 @@ func TestLexPositional(t *testing.T) {
 			expected: "select * from table where a = 'replaced' and b = '?fooledYou'",
 		},
 		{
+			name:     "empty string",
+			query:    "select * from table where (a = ? or ? = '') and b > ?",
+                        expected: "select * from table where (a = 'replaced' or 'replaced' = '') and b > 'replaced'",
+		},
+		{
 			name: "? hidden in a comment",
 			query: `select
 			* from -- maybe broken?
