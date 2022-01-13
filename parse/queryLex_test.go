@@ -203,7 +203,7 @@ func TestLexPositional(t *testing.T) {
 		{
 			name:     "empty string",
 			query:    "select * from table where (a = ? or ? = '') and b > ?",
-                        expected: "select * from table where (a = 'replaced' or 'replaced' = '') and b > 'replaced'",
+			expected: "select * from table where (a = 'replaced' or 'replaced' = '') and b > 'replaced'",
 		},
 		{
 			name: "? hidden in a comment",
