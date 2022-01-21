@@ -355,9 +355,16 @@ func (v *connection) sendMessageTo(msg msgs.FrontEndMsg, conn net.Conn) error {
 
 		_, result = conn.Write(sizeBytes)
 
-		if result == nil {
-			if len(msgBytes) > 0 {
-				_, result = conn.Write(msgBytes)
+		if result == nil && len(msgBytes) > 0 {
+			size := 8192 // Max msg size, consistent with how the server works
+			pos := 0
+			var sent int
+			for pos < len(msgBytes) {
+				sent, result = conn.Write(msgBytes[pos:min(pos+size, len(msgBytes))])
+				if result != nil {
+					break
+				}
+				pos += sent
 			}
 		}
 	}
@@ -369,6 +376,13 @@ func (v *connection) sendMessageTo(msg msgs.FrontEndMsg, conn net.Conn) error {
 	}
 
 	return result
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (v *connection) handshake() error {
