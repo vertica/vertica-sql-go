@@ -60,6 +60,7 @@ var (
 	ctx                   context.Context
 )
 
+// The following assert functions compensate for Go having no native assertions
 func assertTrue(t *testing.T, v bool) {
 	t.Helper()
 
