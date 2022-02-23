@@ -40,6 +40,7 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/url"
 	"os"
@@ -273,7 +274,7 @@ func newConnection(connString string) (*connection, error) {
 	return result, nil
 }
 
-func (v *connection) establishSocketConnection() (net.Conn, error) {
+/*func (v *connection) establishSocketConnection() (net.Conn, error) {
 	// Failover: loop to try all hosts in the list
 	err_msg := ""
 	for i := 0; i < len(v.connHostsList); i++ {
@@ -289,6 +290,57 @@ func (v *connection) establishSocketConnection() (net.Conn, error) {
 			connectionLogger.Debug("Established socket connection to %s", v.connHostsList[i])
 			v.connHostsList = v.connHostsList[i:]
 			return conn, err
+		}
+	}
+	// All of the hosts failed
+	return nil, fmt.Errorf("Failed to establish a connection to the primary server or any backup host.%s", err_msg)
+}*/
+
+func (v *connection) establishSocketConnection() (net.Conn, error) {
+	// Failover: loop to try all hosts in the list
+	err_msg := ""
+	for i := 0; i < len(v.connHostsList); i++ {
+		host, port, err := net.SplitHostPort(v.connHostsList[i])
+		if err != nil {
+			err_msg += fmt.Sprintf("\n  '%s': %s", host, err.Error())
+			//fmt.Printf("Failed to split host and port from network address: %s\n%s\n", v.connHostsList[i], err.Error());
+			continue
+		}
+		fmt.Printf("Trying Host: %s Port: %s\n", host, port)
+		ips, err := net.LookupIP(host)
+		if err != nil {
+			err_msg += fmt.Sprintf("\n  '%s': %s", host, err.Error())
+			//fmt.Printf("Failed to resolve IP address for %s\n%s\n", host, err.Error())
+			continue
+		}
+		fmt.Printf("IPs resolved by host: %s\n", ips)
+		r := rand.New(rand.NewSource(time.Now().Unix()))
+		for _, j := range r.Perm(len(ips)) {
+			ip := net.IP.String(ips[j])
+			//returns nil if not an IPv4 address
+			if strings.HasPrefix(ip, "::") {
+				ip = "[" + ip + "]"
+			}
+			// now we have a random ip from the list which cannot be a duplicate
+			addrString := ip + ":" + string(port)
+			fmt.Printf("Attempting to connect to %s\n", addrString)
+		    conn, err := net.Dial("tcp", addrString)
+    
+		    if err != nil {
+		    	err_msg += fmt.Sprintf("\n  '%s': %s", v.connHostsList[i], err.Error())
+				fmt.Printf("Attempt Failed\n")
+		    } else {
+				fmt.Printf("Attempt Succeeded\n")
+		    	if len(err_msg) != 0 {
+		    		connectionLogger.Debug("Failed to establish a connection to %s", err_msg)
+					//fmt.Printf("Failed to establish a connection to %s\n", addrString)
+		    	}
+		    	connectionLogger.Debug("Established socket connection to %s", err_msg)
+				//fmt.Printf("Established socket connection to %s\n", addrString)
+		    	v.connHostsList = v.connHostsList[i:]
+		    	return conn, err
+		    }
+            
 		}
 	}
 	// All of the hosts failed
