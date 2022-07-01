@@ -33,7 +33,7 @@ package msgs
 // THE SOFTWARE.
 
 import (
-        "bytes"
+	"bytes"
 	"database/sql/driver"
 	"fmt"
 	"time"
