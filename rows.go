@@ -36,7 +36,6 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"reflect"
@@ -127,8 +126,25 @@ func (r *rows) Next(dest []driver.Value) error {
 			dest[idx], err = parseTimestampTZColumn("0000-01-01 " + string(colVal))
 		case common.ColTypeInterval, common.ColTypeIntervalYM: // stays string
 			dest[idx] = string(colVal)
-		case common.ColTypeVarBinary, common.ColTypeLongVarBinary, common.ColTypeBinary: // to HEX string
-			dest[idx] = hex.EncodeToString(colVal)
+		case common.ColTypeVarBinary, common.ColTypeLongVarBinary, common.ColTypeBinary:
+			// to []byte; convert escaped octal (e.g. \261) into byte with \\ for \
+			var out []byte
+			for len(colVal) > 0 {
+				c := colVal[0]
+				if c == '\\' {
+					if colVal[1] == '\\' { // escaped \
+						colVal = colVal[2:]
+					} else { // A \xxx octal string
+						x, _ := strconv.ParseInt(string(colVal[1:4]), 8, 32)
+						c = byte(x)
+						colVal = colVal[4:]
+					}
+				} else {
+					colVal = colVal[1:]
+				}
+				out = append(out, c)
+			}
+			dest[idx] = out
 		default:
 			dest[idx] = string(colVal)
 		}
