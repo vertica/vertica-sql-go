@@ -623,7 +623,7 @@ func TestValueTypes(t *testing.T) {
 	assertEqual(t, uuidVal, "372fd680-6a72-4003-96b0-10bbe78cd635")
 	assertEqual(t, lVarCharVal, "longer var char")
 	assertEqual(t, hex.EncodeToString(lVarBinaryVal), "deadbeef")
-	assertEqual(t, hex.EncodeToString(binaryVal), "baadf00d")
+	assertEqual(t, hex.EncodeToString(binaryVal), "ba")
 	assertEqual(t, numericVal, 1.2345)
 
 	assertNext(t, rows)
