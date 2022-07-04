@@ -37,7 +37,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
-        "encoding/hex"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"

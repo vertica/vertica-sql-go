@@ -132,9 +132,9 @@ func (r *rows) Next(dest []driver.Value) error {
 			for len(colVal) > 0 {
 				c := colVal[0]
 				if c == '\\' {
-					if colVal[1] == '\\' {  // escaped \
+					if colVal[1] == '\\' { // escaped \
 						colVal = colVal[2:]
-					} else {                // A \xxx octal string
+					} else { // A \xxx octal string
 						x, _ := strconv.ParseInt(string(colVal[1:4]), 8, 32)
 						c = byte(x)
 						colVal = colVal[4:]
