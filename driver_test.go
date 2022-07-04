@@ -619,7 +619,7 @@ func TestValueTypes(t *testing.T) {
 	assertEqual(t, intervalMonthVal, "22")
 	assertEqual(t, timeVal.String()[11:23], "04:05:06.789")
 	assertEqual(t, timeTZVal.String()[11:25], "16:05:06 -0800")
-	assertEqual(t, hex.EncodeToString(varBinVal), "beefdead"))
+	assertEqual(t, hex.EncodeToString(varBinVal), "beefdead")
 	assertEqual(t, uuidVal, "372fd680-6a72-4003-96b0-10bbe78cd635")
 	assertEqual(t, lVarCharVal, "longer var char")
 	assertEqual(t, hex.EncodeToString(lVarBinaryVal), "deadbeef")
