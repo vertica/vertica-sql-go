@@ -37,6 +37,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
+        "encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -578,11 +579,11 @@ func TestValueTypes(t *testing.T) {
 		intervalMonthVal string
 		timeVal          time.Time
 		timeTZVal        time.Time
-		varBinVal        string
+		varBinVal        []byte
 		uuidVal          string
 		lVarCharVal      string
-		lVarBinaryVal    string
-		binaryVal        string
+		lVarBinaryVal    []byte
+		binaryVal        []byte
 		numericVal       float64
 	)
 
@@ -618,11 +619,11 @@ func TestValueTypes(t *testing.T) {
 	assertEqual(t, intervalMonthVal, "22")
 	assertEqual(t, timeVal.String()[11:23], "04:05:06.789")
 	assertEqual(t, timeTZVal.String()[11:25], "16:05:06 -0800")
-	assertEqual(t, varBinVal, "5c3237365c3335375c3333365c323535")
+	assertEqual(t, hex.EncodeToString(varBinVal), "beefdead"))
 	assertEqual(t, uuidVal, "372fd680-6a72-4003-96b0-10bbe78cd635")
 	assertEqual(t, lVarCharVal, "longer var char")
-	assertEqual(t, lVarBinaryVal, "5c3333365c3235355c3237365c333537")
-	assertEqual(t, binaryVal, "5c323732")
+	assertEqual(t, hex.EncodeToString(lVarBinaryVal), "deadbeef")
+	assertEqual(t, hex.EncodeToString(binaryVal), "baadf00d")
 	assertEqual(t, numericVal, 1.2345)
 
 	assertNext(t, rows)
