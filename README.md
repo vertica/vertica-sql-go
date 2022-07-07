@@ -372,7 +372,7 @@ func main() {
 
     // Create a connection to our database. Connection is lazy and won't
     // happen until it's used.
-    connDB, err := sql.Open("vertica", "vertica://dbadmin:@localhost:5433/dbadmin")
+    connDB, err := sql.Open("vertica", "vertica://dbadmin:@localhost:5433/db1?connection_load_balance=1")
 
     if err != nil {
         testLogger.Fatal(err.Error())
