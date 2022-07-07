@@ -464,8 +464,8 @@ func TestPWAuthentication(t *testing.T) {
 		assertEqual(t, verr.SQLState, "28000")
 		assertEqual(t, verr.Severity, "FATAL")
 		assertEqual(t, verr.Routine, "auth_failed")
-		assertEqual(t, verr.ErrorCode, "3781")
-		assertErr(t, err, "Invalid username or password")
+		assertEqual(t, verr.ErrorCode, "2248")
+		assertErr(t, err, "Authentication failed for username ")
 	}
 	assertNoErr(t, connDB3.Close())
 }
@@ -488,7 +488,7 @@ func testAnAuthScheme(t *testing.T, scheme string) {
 
 	err = connDB3.PingContext(ctx)
 	if err != nil && err.Error() != "EOF" {
-		assertErr(t, err, "Invalid username or password")
+		assertErr(t, err, "Authentication failed for username ")
 	}
 
 	assertNoErr(t, connDB3.Close())
