@@ -1228,10 +1228,10 @@ func init() {
 			testLogger.Fatal("could not register tls config: %v", err)
 		}
 	}
-	myDBConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@" + *verticaHostPort + "/" + *verticaUserName + "?" + usePreparedStmtsString + "&tlsmode=" + *tlsMode
-	otherConnectString = "vertica://TestGuy:TestGuyPass@" + *verticaHostPort + "/TestGuy?tlsmode=" + *tlsMode
-	badConnectString = "vertica://TestGuy:TestGuyBadPass@" + *verticaHostPort + "/TestGuy?tlsmode=" + *tlsMode
-	failoverConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@badHost" + "/" + *verticaUserName + "?backup_server_node=abc.com:100000," + *verticaHostPort + ",localhost:port"
+	myDBConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@" + *verticaHostPort + "?" + usePreparedStmtsString + "&tlsmode=" + *tlsMode
+	otherConnectString = "vertica://TestGuy:TestGuyPass@" + *verticaHostPort + "/?tlsmode=" + *tlsMode
+	badConnectString = "vertica://TestGuy:TestGuyBadPass@" + *verticaHostPort + "/?tlsmode=" + *tlsMode
+	failoverConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@badHost" + "?backup_server_node=abc.com:100000," + *verticaHostPort + ",localhost:port"
 
 	ctx = context.Background()
 }

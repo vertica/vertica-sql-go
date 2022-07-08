@@ -299,18 +299,18 @@ func (v *connection) establishSocketConnection() (net.Conn, error) {
 				ip = "[" + ip + "]"
 			}
 			addrString := ip + ":" + string(port)
-		    conn, err := net.Dial("tcp", addrString)
-    
-		    if err != nil {
-		    	err_msg += fmt.Sprintf("\n  '%s': %s", v.connHostsList[i], err.Error())
-		    } else {
-		    	if len(err_msg) != 0 {
-		    		connectionLogger.Debug("Failed to establish a connection to %s", err_msg)
-		    	}
-		    	connectionLogger.Debug("Established socket connection to %s", addrString)
-		    	v.connHostsList = v.connHostsList[i:]
-		    	return conn, err
-		    }
+			conn, err := net.Dial("tcp", addrString)
+
+			if err != nil {
+				err_msg += fmt.Sprintf("\n  '%s': %s", v.connHostsList[i], err.Error())
+			} else {
+				if len(err_msg) != 0 {
+					connectionLogger.Debug("Failed to establish a connection to %s", err_msg)
+				}
+				connectionLogger.Debug("Established socket connection to %s", addrString)
+				v.connHostsList = v.connHostsList[i:]
+				return conn, err
+			}
 		}
 	}
 	// All of the hosts failed
@@ -419,18 +419,17 @@ func (v *connection) handshake() error {
 		return fmt.Errorf("connection string must have a non-empty user name")
 	}
 
-	if len(v.connURL.Path) <= 1 {
-		return fmt.Errorf("connection string must include a database name")
+	dbName := ""
+	if len(v.connURL.Path) > 1 {
+		dbName = v.connURL.Path[1:]
 	}
-
-	path := v.connURL.Path[1:]
 
 	msg := &msgs.FEStartupMsg{
 		ProtocolVersion: protocolVersion,
 		DriverName:      driverName,
 		DriverVersion:   driverVersion,
 		Username:        userName,
-		Database:        path,
+		Database:        dbName,
 		SessionID:       v.sessionID,
 		ClientPID:       v.clientPID,
 	}
