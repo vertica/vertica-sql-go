@@ -25,7 +25,7 @@ jobs:
             --name vertica_docker \
             vertica/vertica-ce
           echo "Vertica startup ..."
-          until docker exec vertica_docker_ce test -f /data/vertica/VMart/agent_start.out; do \
+          until docker exec vertica_docker test -f /data/vertica/VMart/agent_start.out; do \
             echo "..."; \
             sleep 3; \
           done;
