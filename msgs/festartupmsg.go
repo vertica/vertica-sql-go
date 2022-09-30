@@ -32,7 +32,10 @@ package msgs
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-import "fmt"
+import (
+	"fmt"
+	"os/user"
+)
 
 // FEStartupMsg docs
 type FEStartupMsg struct {
@@ -43,10 +46,17 @@ type FEStartupMsg struct {
 	Database        string
 	SessionID       string
 	ClientPID       int
+	OSUsername      string
 }
 
 // Flatten docs
 func (m *FEStartupMsg) Flatten() ([]byte, byte) {
+
+	m.OSUsername = ""
+	currentUser, err := user.Current()
+	if err == nil {
+		m.OSUsername = currentUser.Username
+	}
 
 	buf := newMsgBuffer()
 	const fixedProtocolVersion uint32 = 0x00030005
@@ -69,6 +79,7 @@ func (m *FEStartupMsg) Flatten() ([]byte, byte) {
 	buf.appendLabeledString("client_version", m.DriverVersion)
 	buf.appendLabeledString("client_label", m.SessionID)
 	buf.appendLabeledString("client_pid", fmt.Sprintf("%d", m.ClientPID))
+	buf.appendLabeledString("client_os_user_name", m.OSUsername)
 	buf.appendBytes([]byte{0})
 
 	return buf.bytes(), 0
@@ -76,12 +87,13 @@ func (m *FEStartupMsg) Flatten() ([]byte, byte) {
 
 func (m *FEStartupMsg) String() string {
 	return fmt.Sprintf(
-		"Startup (packet): ProtocolVersion:%08X, DriverName='%s', DriverVersion='%s', UserName='%s', Database='%s', SessionID='%s', ClientPID=%d",
+		"Startup (packet): ProtocolVersion:%08X, DriverName='%s', DriverVersion='%s', UserName='%s', Database='%s', SessionID='%s', ClientPID=%d, ClientOSUserName='%s'",
 		m.ProtocolVersion,
 		m.DriverName,
 		m.DriverVersion,
 		m.Username,
 		m.Database,
 		m.SessionID,
-		m.ClientPID)
+		m.ClientPID,
+		m.OSUsername)
 }
