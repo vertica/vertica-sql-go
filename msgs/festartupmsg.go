@@ -35,6 +35,8 @@ package msgs
 import (
 	"fmt"
 	"os/user"
+
+	"github.com/elastic/go-sysinfo"
 )
 
 // FEStartupMsg docs
@@ -46,11 +48,19 @@ type FEStartupMsg struct {
 	Database        string
 	SessionID       string
 	ClientPID       int
+	ClientOS        string
 	OSUsername      string
 }
 
 // Flatten docs
 func (m *FEStartupMsg) Flatten() ([]byte, byte) {
+
+	m.ClientOS = ""
+	host, err := sysinfo.Host()
+	if err == nil {
+		info := host.Info()
+		m.ClientOS = fmt.Sprintf("%s %s %s", info.OS.Name, info.KernelVersion, info.Architecture)
+	}
 
 	m.OSUsername = ""
 	currentUser, err := user.Current()
@@ -79,6 +89,7 @@ func (m *FEStartupMsg) Flatten() ([]byte, byte) {
 	buf.appendLabeledString("client_version", m.DriverVersion)
 	buf.appendLabeledString("client_label", m.SessionID)
 	buf.appendLabeledString("client_pid", fmt.Sprintf("%d", m.ClientPID))
+	buf.appendLabeledString("client_os", m.ClientOS)
 	buf.appendLabeledString("client_os_user_name", m.OSUsername)
 	buf.appendBytes([]byte{0})
 
@@ -87,7 +98,7 @@ func (m *FEStartupMsg) Flatten() ([]byte, byte) {
 
 func (m *FEStartupMsg) String() string {
 	return fmt.Sprintf(
-		"Startup (packet): ProtocolVersion:%08X, DriverName='%s', DriverVersion='%s', UserName='%s', Database='%s', SessionID='%s', ClientPID=%d, ClientOSUserName='%s'",
+		"Startup (packet): ProtocolVersion:%08X, DriverName='%s', DriverVersion='%s', UserName='%s', Database='%s', SessionID='%s', ClientPID=%d, ClientOS='%s', ClientOSUserName='%s'",
 		m.ProtocolVersion,
 		m.DriverName,
 		m.DriverVersion,
@@ -95,5 +106,6 @@ func (m *FEStartupMsg) String() string {
 		m.Database,
 		m.SessionID,
 		m.ClientPID,
+		m.ClientOS,
 		m.OSUsername)
 }
