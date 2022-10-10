@@ -217,7 +217,11 @@ func newConnection(connString string) (*connection, error) {
 	}
 
 	result.clientPID = os.Getpid()
-	result.sessionID = fmt.Sprintf("%s-%s-%d-%d", driverName, driverVersion, result.clientPID, time.Now().Unix())
+	if client_label := result.connURL.Query().Get("client_label"); client_label != "" {
+		result.sessionID = client_label
+	} else {
+		result.sessionID = fmt.Sprintf("%s-%s-%d-%d", driverName, driverVersion, result.clientPID, time.Now().Unix())
+	}
 
 	// Read the interpolate flag.
 	if iFlag := result.connURL.Query().Get("use_prepared_statements"); iFlag != "" {
