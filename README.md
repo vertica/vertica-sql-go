@@ -102,6 +102,7 @@ Currently supported query arguments are:
 |                |                                    | 'server-strict' = server must support SSL/TLS |
 |                |                                    | {customName} = use custom registered `tls.Config` (see "Using custom TLS config" section below) |
 | backup_server_node    | a list of backup hosts for the client to try to connect if the primary host is unreachable | a comma-seperated list of backup host-port pairs. E.g.<br> 'host1:port1,host2:port2,host3:port3'  |
+| client_label   | Sets a label for the connection on the server. This value appears in the `client_label` column of the SESSIONS system table. | (default) vertica-sql-go-{version}-{pid}-{timestamp} |
 
 To ping the server and validate a connection (as the connection isn't necessarily created at that moment), simply call the *PingContext()* method.
 

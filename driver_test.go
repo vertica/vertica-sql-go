@@ -167,7 +167,7 @@ func closeConnection(t *testing.T, connDB *sql.DB, teardownScript ...interface{}
 func TestTLSConfiguration(t *testing.T) {
 	connDB := openConnection(t)
 	defer closeConnection(t, connDB)
-	rows, err := connDB.QueryContext(ctx, "SELECT ssl_state FROM sessions")
+	rows, err := connDB.QueryContext(ctx, "SELECT ssl_state FROM sessions WHERE session_id=(SELECT current_session())")
 	assertNoErr(t, err)
 	defer rows.Close()
 
@@ -184,6 +184,20 @@ func TestTLSConfiguration(t *testing.T) {
 		default:
 			t.Fatalf("tlsmode is set to '%s' but session ssl_state is '%s'", *tlsMode, sslState)
 		}
+	}
+}
+
+func TestClientLabel(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+	rows, err := connDB.QueryContext(ctx, "SELECT client_label FROM sessions WHERE session_id=(SELECT current_session())")
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	var client_label string
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&client_label))
+		assertEqual(t, client_label, "tests-for-golang")
 	}
 }
 
@@ -1228,7 +1242,7 @@ func init() {
 			testLogger.Fatal("could not register tls config: %v", err)
 		}
 	}
-	myDBConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@" + *verticaHostPort + "?" + usePreparedStmtsString + "&tlsmode=" + *tlsMode
+	myDBConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@" + *verticaHostPort + "?" + usePreparedStmtsString + "&tlsmode=" + *tlsMode + "&client_label=tests-for-golang"
 	otherConnectString = "vertica://TestGuy:TestGuyPass@" + *verticaHostPort + "/?tlsmode=" + *tlsMode
 	badConnectString = "vertica://TestGuy:TestGuyBadPass@" + *verticaHostPort + "/?tlsmode=" + *tlsMode
 	failoverConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@badHost" + "?backup_server_node=abc.com:100000," + *verticaHostPort + ",localhost:port"
