@@ -236,7 +236,7 @@ func newConnection(connString string) (*connection, error) {
 	if backupHostsStr == "" {
 		result.connHostsList = []string{result.connURL.Host}
 	} else {
-		// Parse comma-seperated list of backup host-port pairs
+		// Parse comma-separated list of backup host-port pairs
 		hosts := strings.Split(backupHostsStr, ",")
 		// Push target host to front of the hosts list
 		result.connHostsList = append([]string{result.connURL.Host}, hosts...)
