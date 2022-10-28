@@ -84,8 +84,8 @@ func (t *_tlsConfigs) get(name string) (*tls.Config, bool) {
 
 var tlsConfigs = &_tlsConfigs{m: make(map[string]*tls.Config)}
 
-//  db, err := sql.Open("vertica", "user@tcp(localhost:3306)/test?tlsmode=custom")
-//  reserved modes: 'server', 'server-strict' or 'none'
+// db, err := sql.Open("vertica", "user@tcp(localhost:3306)/test?tlsmode=custom")
+// reserved modes: 'server', 'server-strict' or 'none'
 func RegisterTLSConfig(name string, config *tls.Config) error {
 	if name == tlsModeServer || name == tlsModeServerStrict || name == tlsModeNone {
 		return fmt.Errorf("config name '%s' is reserved therefore cannot be used", name)
@@ -108,6 +108,7 @@ type connection struct {
 	connHostsList    []string
 	scratch          [512]byte
 	sessionID        string
+	autocommit       string
 	serverTZOffset   string
 	dead             bool // used if a ROLLBACK severity error is encountered
 	sessMutex        sync.Mutex
@@ -226,6 +227,13 @@ func newConnection(connString string) (*connection, error) {
 	// Read the interpolate flag.
 	if iFlag := result.connURL.Query().Get("use_prepared_statements"); iFlag != "" {
 		result.usePreparedStmts = iFlag == "1"
+	}
+
+	// Read Autocommit flag.
+	if iFlag := result.connURL.Query().Get("autocommit"); iFlag == "" || iFlag == "1" {
+		result.autocommit = "on"
+	} else {
+		result.autocommit = "off"
 	}
 
 	// Read connection load balance flag.
@@ -436,6 +444,7 @@ func (v *connection) handshake() error {
 		Database:        dbName,
 		SessionID:       v.sessionID,
 		ClientPID:       v.clientPID,
+		Autocommit:      v.autocommit,
 	}
 
 	if err := v.sendMessage(msg); err != nil {
