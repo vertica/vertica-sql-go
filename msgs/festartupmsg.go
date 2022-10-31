@@ -50,6 +50,7 @@ type FEStartupMsg struct {
 	ClientPID       int
 	ClientOS        string
 	OSUsername      string
+	Autocommit      string
 }
 
 // Flatten docs
@@ -91,6 +92,7 @@ func (m *FEStartupMsg) Flatten() ([]byte, byte) {
 	buf.appendLabeledString("client_pid", fmt.Sprintf("%d", m.ClientPID))
 	buf.appendLabeledString("client_os", m.ClientOS)
 	buf.appendLabeledString("client_os_user_name", m.OSUsername)
+	buf.appendLabeledString("autocommit", m.Autocommit)
 	buf.appendBytes([]byte{0})
 
 	return buf.bytes(), 0
@@ -98,7 +100,7 @@ func (m *FEStartupMsg) Flatten() ([]byte, byte) {
 
 func (m *FEStartupMsg) String() string {
 	return fmt.Sprintf(
-		"Startup (packet): ProtocolVersion:%08X, DriverName='%s', DriverVersion='%s', UserName='%s', Database='%s', SessionID='%s', ClientPID=%d, ClientOS='%s', ClientOSUserName='%s'",
+		"Startup (packet): ProtocolVersion:%08X, DriverName='%s', DriverVersion='%s', UserName='%s', Database='%s', SessionID='%s', ClientPID=%d, ClientOS='%s', ClientOSUserName='%s', Autocommit='%s'",
 		m.ProtocolVersion,
 		m.DriverName,
 		m.DriverVersion,
@@ -107,5 +109,6 @@ func (m *FEStartupMsg) String() string {
 		m.SessionID,
 		m.ClientPID,
 		m.ClientOS,
-		m.OSUsername)
+		m.OSUsername,
+		m.Autocommit)
 }
