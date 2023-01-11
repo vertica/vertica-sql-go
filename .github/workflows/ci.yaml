@@ -12,10 +12,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Set up Go ${{ matrix.go-version }}
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v3
         with:
           go-version: ${{ matrix.go-version }}
       - name: Set up a Vertica server
@@ -39,10 +39,9 @@ jobs:
 
       - name: Run tests without TLS
         run: |
-          go test -race . -args --locator [::]:5433 --user dbadmin
+          go test -race . -args --locator localhost:5433 --user dbadmin
           go test -race . -args --locator localhost:5433 --user dbadmin --use_prepared_statements=0
           go test -race ./logger
-          ip -6 addr|grep -v fe80|grep inet6
 
       - name: Turning on TLS in the database
         run: |
