@@ -293,7 +293,7 @@ func (v *connection) establishSocketConnection() (net.Conn, error) {
 		host, port, err := net.SplitHostPort(v.connHostsList[i])
 		if err != nil {
 			// no host-port pair identified
-			err_msg += fmt.Sprintf("\n  '%s': %s", host, err.Error())
+			err_msg += fmt.Sprintf("\n  '%s': %s", v.connHostsList[i], err.Error())
 			continue
 		}
 		ips, err := net.LookupIP(host)
@@ -305,14 +305,8 @@ func (v *connection) establishSocketConnection() (net.Conn, error) {
 		r := rand.New(rand.NewSource(time.Now().Unix()))
 		for _, j := range r.Perm(len(ips)) {
 			// j comes from random permutation of indexes - ips[j] will access a random resolved ip
-			ip := net.IP.String(ips[j])
-			if strings.HasPrefix(ip, "::") {
-				//handle IPV6 shorthand
-				ip = "[" + ip + "]"
-			}
-			addrString := ip + ":" + string(port)
+			addrString := net.JoinHostPort(ips[j].String(), port) // IPv6 returns "[host]:port"
 			conn, err := net.Dial("tcp", addrString)
-
 			if err != nil {
 				err_msg += fmt.Sprintf("\n  '%s': %s", v.connHostsList[i], err.Error())
 			} else {
