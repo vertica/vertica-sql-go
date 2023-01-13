@@ -88,6 +88,7 @@ where *myDBConnectString* is of the form:
 ```Go
 vertica://(user):(password)@(host):(port)/(database)?(queryArgs)
 ```
+If the host is a literal IPv6 address it must be enclosed in square brackets.
 
 Currently supported query arguments are:
 
