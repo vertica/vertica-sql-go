@@ -86,9 +86,9 @@ connDB, err := sql.Open("vertica", myDBConnectString)
 where *myDBConnectString* is of the form:
 
 ```Go
-vertica://(user):(password)@(host):(port)/(database)?(queryArgs)
+vertica://(user):(password)@(host):(port)/(database)[?arg1=value&...&argN=valueN]
 ```
-If the host is a literal IPv6 address it must be enclosed in square brackets.
+All parameters must be escaped (to URL-encoded format). If the *host* is a literal IPv6 address it must be enclosed in square brackets.
 
 Currently supported query arguments are:
 
