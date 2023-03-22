@@ -94,19 +94,13 @@ Currently supported query arguments are:
 
 | Query Argument | Description | Values |
 |----------------|-------------|--------|
-| use_prepared_statements    | whether to use client-side query interpolation or server-side argument binding | 1 = (default) use server-side bindings |
-|                |             | 0 = user client side interpolation **(LESS SECURE)** |
-| connection_load_balance    | whether to enable connection load balancing on the client side | 0 = (default) disable load balancing |
-|                |             | 1 = enable load balancing |
-| tlsmode            | the ssl/tls policy for this connection | 'none' (default) = don't use SSL/TLS for this connection |
-|                |                                    | 'server' = server must support SSL/TLS, but skip verification **(INSECURE!)** |
-|                |                                    | 'server-strict' = server must support SSL/TLS |
-|                |                                    | {customName} = use custom registered `tls.Config` (see "Using custom TLS config" section below) |
-| backup_server_node    | a list of backup hosts for the client to try to connect if the primary host is unreachable | a comma-seperated list of backup host-port pairs. E.g.<br> 'host1:port1,host2:port2,host3:port3'  |
+| use_prepared_statements    | Whether to use client-side query interpolation or server-side argument binding. | 1 = (default) use server-side bindings <br>0 = user client side interpolation **(LESS SECURE)** |
+| connection_load_balance    | Whether to enable connection load balancing on the client side. | 0 = (default) disable load balancing <br>1 = enable load balancing |
+| tlsmode            | The ssl/tls policy for this connection. | <li>'none' (default) = don't use SSL/TLS for this connection</li><li>'server' = server must support SSL/TLS, but skip verification **(INSECURE!)**</li><li>'server-strict' = server must support SSL/TLS</li><li>{customName} = use custom registered `tls.Config` (see "Using custom TLS config" section below)</li> |
+| backup_server_node    | A list of backup hosts for the client to try to connect if the primary host is unreachable. | a comma-seperated list of backup host-port pairs. E.g.<br> 'host1:port1,host2:port2,host3:port3'  |
 | client_label   | Sets a label for the connection on the server. This value appears in the `client_label` column of the SESSIONS system table. | (default) vertica-sql-go-{version}-{pid}-{timestamp} |
-| autocommit     | Controls whether the connection automatically commits transactions. | 1 = (default) on |
-|                |            | 0 = off
-| oauth_access_token | To authenticate via OAuth, provide an OAuth Access Token that authorizes a user to the database | unspecified by default |
+| autocommit     | Controls whether the connection automatically commits transactions. | 1 = (default) on <br>0 = off|
+| oauth_access_token | To authenticate via OAuth, provide an OAuth Access Token that authorizes a user to the database. | unspecified by default |
 
 To ping the server and validate a connection (as the connection isn't necessarily created at that moment), simply call the *PingContext()* method.
 
