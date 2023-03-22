@@ -79,9 +79,7 @@ func (m *FEStartupMsg) Flatten() ([]byte, byte) {
 	buf.appendUint32(m.ProtocolVersion)
 	buf.appendBytes([]byte{0})
 
-	if len(m.Username) > 0 {
-		buf.appendLabeledString("user", m.Username)
-	}
+	buf.appendLabeledString("user", m.Username)
 
 	if len(m.Database) > 0 {
 		buf.appendLabeledString("database", m.Database)
@@ -89,6 +87,7 @@ func (m *FEStartupMsg) Flatten() ([]byte, byte) {
 
 	if len(m.OAuthAccessToken) > 0 {
 		buf.appendLabeledString("oauth_access_token", m.OAuthAccessToken)
+		buf.appendLabeledString("auth_category", "OAuth")
 	}
 
 	buf.appendLabeledString("client_type", m.DriverName)

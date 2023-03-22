@@ -60,6 +60,7 @@ const (
 	AuthenticationOK                int32 = 0
 	AuthenticationCleartextPassword int32 = 3
 	AuthenticationMD5Password       int32 = 5
+	AuthenticationOAuth             int32 = 12
 	AuthenticationSHA512Password    int32 = 66048
 )
 
