@@ -100,7 +100,7 @@ Currently supported query arguments are:
 | backup_server_node    | A list of backup hosts for the client to try to connect if the primary host is unreachable. | a comma-seperated list of backup host-port pairs. E.g.<br> 'host1:port1,host2:port2,host3:port3'  |
 | client_label   | Sets a label for the connection on the server. This value appears in the `client_label` column of the SESSIONS system table. | (default) vertica-sql-go-{version}-{pid}-{timestamp} |
 | autocommit     | Controls whether the connection automatically commits transactions. | 1 = (default) on <br>0 = off|
-| oauth_access_token | To authenticate via OAuth, provide an OAuth Access Token that authorizes a user to the database. | unspecified by default |
+| oauth_access_token | To authenticate via OAuth, provide an OAuth Access Token that authorizes a user to the database. | unspecified by default, if specified then *user* is optional |
 
 To ping the server and validate a connection (as the connection isn't necessarily created at that moment), simply call the *PingContext()* method.
 
