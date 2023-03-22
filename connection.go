@@ -419,14 +419,14 @@ func min(a, b int) int {
 
 func (v *connection) handshake() error {
 
-	if v.connURL.User == nil {
-		return fmt.Errorf("connection string must include a user name")
+	if v.connURL.User == nil && len(v.oauthaccesstoken) == 0 {
+		return fmt.Errorf("connection string must include a user name or oauth_access_token")
 	}
 
 	userName := v.connURL.User.Username()
 
 	if len(userName) == 0 && len(v.oauthaccesstoken) == 0 {
-		return fmt.Errorf("connection string must have a non-empty user name")
+		return fmt.Errorf("connection string must have a non-empty user name or oauth_access_token")
 	}
 
 	dbName := ""
