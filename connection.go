@@ -109,6 +109,7 @@ type connection struct {
 	scratch          [512]byte
 	sessionID        string
 	autocommit       string
+	oauthaccesstoken string
 	serverTZOffset   string
 	dead             bool // used if a ROLLBACK severity error is encountered
 	sessMutex        sync.Mutex
@@ -235,6 +236,9 @@ func newConnection(connString string) (*connection, error) {
 	} else {
 		result.autocommit = "off"
 	}
+
+	// Read OAuth access token flag.
+	result.oauthaccesstoken = result.connURL.Query().Get("oauth_access_token")
 
 	// Read connection load balance flag.
 	loadBalanceFlag := result.connURL.Query().Get("connection_load_balance")
@@ -415,14 +419,14 @@ func min(a, b int) int {
 
 func (v *connection) handshake() error {
 
-	if v.connURL.User == nil {
-		return fmt.Errorf("connection string must include a user name")
+	if v.connURL.User == nil && len(v.oauthaccesstoken) == 0 {
+		return fmt.Errorf("connection string must include a user name or oauth_access_token")
 	}
 
 	userName := v.connURL.User.Username()
 
-	if len(userName) == 0 {
-		return fmt.Errorf("connection string must have a non-empty user name")
+	if len(userName) == 0 && len(v.oauthaccesstoken) == 0 {
+		return fmt.Errorf("connection string must have a non-empty user name or oauth_access_token")
 	}
 
 	dbName := ""
@@ -431,14 +435,15 @@ func (v *connection) handshake() error {
 	}
 
 	msg := &msgs.FEStartupMsg{
-		ProtocolVersion: protocolVersion,
-		DriverName:      driverName,
-		DriverVersion:   driverVersion,
-		Username:        userName,
-		Database:        dbName,
-		SessionID:       v.sessionID,
-		ClientPID:       v.clientPID,
-		Autocommit:      v.autocommit,
+		ProtocolVersion:  protocolVersion,
+		DriverName:       driverName,
+		DriverVersion:    driverVersion,
+		Username:         userName,
+		Database:         dbName,
+		SessionID:        v.sessionID,
+		ClientPID:        v.clientPID,
+		Autocommit:       v.autocommit,
+		OAuthAccessToken: v.oauthaccesstoken,
 	}
 
 	if err := v.sendMessage(msg); err != nil {
@@ -526,6 +531,8 @@ func (v *connection) defaultMessageHandler(bMsg msgs.BackEndMsg) (bool, error) {
 			err = v.authSendMD5Password(msg.ExtraAuthData)
 		case common.AuthenticationSHA512Password:
 			err = v.authSendSHA512Password(msg.ExtraAuthData)
+		case common.AuthenticationOAuth:
+			err = v.authSendOAuthAccessToken()
 		default:
 			handled = false
 			err = fmt.Errorf("unsupported authentication scheme: %d", msg.Response)
@@ -712,6 +719,11 @@ func (v *connection) authSendSHA512Password(extraAuthData []byte) error {
 
 	msg := &msgs.FEPasswordMsg{PasswordData: hash2}
 
+	return v.sendMessage(msg)
+}
+
+func (v *connection) authSendOAuthAccessToken() error {
+	msg := &msgs.FEPasswordMsg{PasswordData: v.oauthaccesstoken}
 	return v.sendMessage(msg)
 }
 

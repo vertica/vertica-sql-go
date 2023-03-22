@@ -41,16 +41,17 @@ import (
 
 // FEStartupMsg docs
 type FEStartupMsg struct {
-	ProtocolVersion uint32
-	DriverName      string
-	DriverVersion   string
-	Username        string
-	Database        string
-	SessionID       string
-	ClientPID       int
-	ClientOS        string
-	OSUsername      string
-	Autocommit      string
+	ProtocolVersion  uint32
+	DriverName       string
+	DriverVersion    string
+	Username         string
+	Database         string
+	SessionID        string
+	ClientPID        int
+	ClientOS         string
+	OSUsername       string
+	Autocommit       string
+	OAuthAccessToken string
 }
 
 // Flatten docs
@@ -78,12 +79,15 @@ func (m *FEStartupMsg) Flatten() ([]byte, byte) {
 	buf.appendUint32(m.ProtocolVersion)
 	buf.appendBytes([]byte{0})
 
-	if len(m.Username) > 0 {
-		buf.appendLabeledString("user", m.Username)
-	}
+	buf.appendLabeledString("user", m.Username)
 
 	if len(m.Database) > 0 {
 		buf.appendLabeledString("database", m.Database)
+	}
+
+	if len(m.OAuthAccessToken) > 0 {
+		buf.appendLabeledString("oauth_access_token", m.OAuthAccessToken)
+		buf.appendLabeledString("auth_category", "OAuth")
 	}
 
 	buf.appendLabeledString("client_type", m.DriverName)
@@ -100,7 +104,7 @@ func (m *FEStartupMsg) Flatten() ([]byte, byte) {
 
 func (m *FEStartupMsg) String() string {
 	return fmt.Sprintf(
-		"Startup (packet): ProtocolVersion:%08X, DriverName='%s', DriverVersion='%s', UserName='%s', Database='%s', SessionID='%s', ClientPID=%d, ClientOS='%s', ClientOSUserName='%s', Autocommit='%s'",
+		"Startup (packet): ProtocolVersion:%08X, DriverName='%s', DriverVersion='%s', UserName='%s', Database='%s', SessionID='%s', ClientPID=%d, ClientOS='%s', ClientOSUserName='%s', Autocommit='%s', OAuthAccessToken=<length:%d>",
 		m.ProtocolVersion,
 		m.DriverName,
 		m.DriverVersion,
@@ -110,5 +114,6 @@ func (m *FEStartupMsg) String() string {
 		m.ClientPID,
 		m.ClientOS,
 		m.OSUsername,
-		m.Autocommit)
+		m.Autocommit,
+		len(m.OAuthAccessToken))
 }
