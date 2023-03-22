@@ -106,6 +106,7 @@ Currently supported query arguments are:
 | client_label   | Sets a label for the connection on the server. This value appears in the `client_label` column of the SESSIONS system table. | (default) vertica-sql-go-{version}-{pid}-{timestamp} |
 | autocommit     | Controls whether the connection automatically commits transactions. | 1 = (default) on |
 |                |            | 0 = off
+| oauth_access_token | To authenticate via OAuth, provide an OAuth Access Token that authorizes a user to the database | unspecified by default |
 
 To ping the server and validate a connection (as the connection isn't necessarily created at that moment), simply call the *PingContext()* method.
 

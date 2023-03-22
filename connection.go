@@ -109,6 +109,7 @@ type connection struct {
 	scratch          [512]byte
 	sessionID        string
 	autocommit       string
+	oauthaccesstoken string
 	serverTZOffset   string
 	dead             bool // used if a ROLLBACK severity error is encountered
 	sessMutex        sync.Mutex
@@ -235,6 +236,8 @@ func newConnection(connString string) (*connection, error) {
 	} else {
 		result.autocommit = "off"
 	}
+
+	result.oauthaccesstoken = result.connURL.Query().Get("oauth_access_token")
 
 	// Read connection load balance flag.
 	loadBalanceFlag := result.connURL.Query().Get("connection_load_balance")
@@ -431,14 +434,15 @@ func (v *connection) handshake() error {
 	}
 
 	msg := &msgs.FEStartupMsg{
-		ProtocolVersion: protocolVersion,
-		DriverName:      driverName,
-		DriverVersion:   driverVersion,
-		Username:        userName,
-		Database:        dbName,
-		SessionID:       v.sessionID,
-		ClientPID:       v.clientPID,
-		Autocommit:      v.autocommit,
+		ProtocolVersion:  protocolVersion,
+		DriverName:       driverName,
+		DriverVersion:    driverVersion,
+		Username:         userName,
+		Database:         dbName,
+		SessionID:        v.sessionID,
+		ClientPID:        v.clientPID,
+		Autocommit:       v.autocommit,
+		OAuthAccessToken: v.oauthaccesstoken,
 	}
 
 	if err := v.sendMessage(msg); err != nil {
