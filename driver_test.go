@@ -58,6 +58,7 @@ var (
 	otherConnectString    string
 	badConnectString      string
 	failoverConnectString string
+	oauthConnectString    string
 	ctx                   context.Context
 )
 
@@ -162,6 +163,29 @@ func closeConnection(t *testing.T, connDB *sql.DB, teardownScript ...interface{}
 		assertExecSQL(t, connDB, teardownScript...)
 	}
 	assertNoErr(t, connDB.Close())
+}
+
+func TestOAuthConnection(t *testing.T) {
+	if len(*oauthAccessToken) == 0 {
+		t.Skip("OAUTH Access Token is not provided, test skipped")
+		return
+	}
+
+	// Let the oauth user try to login now.
+	connDB, err := sql.Open("vertica", oauthConnectString)
+	defer closeConnection(t, connDB)
+	assertNoErr(t, err)
+	assertNoErr(t, connDB.PingContext(ctx))
+
+	rows, err := connDB.QueryContext(ctx, "SELECT authentication_method FROM sessions WHERE session_id=(SELECT current_session())")
+    assertNoErr(t, err)
+	defer rows.Close()
+
+	var authMethod string
+    for rows.Next() {
+            assertNoErr(t, rows.Scan(&authMethod))
+			assertEqual(t, authMethod, "OAuth")
+    }
 }
 
 func TestTLSConfiguration(t *testing.T) {
@@ -1165,6 +1189,7 @@ var verticaPassword = flag.String("password", os.Getenv("VERTICA_TEST_PASSWORD")
 var verticaHostPort = flag.String("locator", "localhost:5433", "Vertica's host and port")
 var tlsMode = flag.String("tlsmode", "none", "SSL/TLS mode (none, server, server-strict, custom)")
 var usePreparedStmts = flag.Bool("use_prepared_statements", true, "whether to use prepared statements for all queries/executes")
+var oauthAccessToken = flag.String("oauth_access_token", os.Getenv("VERTICA_TEST_OAUTH_ACCESS_TOKEN"), "the OAuth Access Token to connect to Vertica")
 
 const (
 	keyPath    string = "resources/tests/ssl/client.key"
@@ -1246,6 +1271,7 @@ func init() {
 	otherConnectString = "vertica://TestGuy:TestGuyPass@" + *verticaHostPort + "/?tlsmode=" + *tlsMode
 	badConnectString = "vertica://TestGuy:TestGuyBadPass@" + *verticaHostPort + "/?tlsmode=" + *tlsMode
 	failoverConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@badHost" + "?backup_server_node=abc.com:100000," + *verticaHostPort + ",localhost:port"
+	oauthConnectString = "vertica://" + *verticaUserName + "@" + *verticaHostPort +  "/?oauth_access_token=" + *oauthAccessToken + "&tlsmode=" + *tlsMode
 
 	ctx = context.Background()
 }
