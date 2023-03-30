@@ -46,7 +46,7 @@ type Driver struct{}
 
 const (
 	driverName      string = "vertica-sql-go"
-	driverVersion   string = "1.3.0"
+	driverVersion   string = "1.3.2"
 	protocolVersion uint32 = 0x0003000C
 )
 
