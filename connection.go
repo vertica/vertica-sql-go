@@ -113,6 +113,7 @@ type connection struct {
 	serverTZOffset   string
 	dead             bool // used if a ROLLBACK severity error is encountered
 	sessMutex        sync.Mutex
+	workload         string
 }
 
 // Begin - Begin starts and returns a new transaction. (DEPRECATED)
@@ -259,6 +260,9 @@ func newConnection(connString string) (*connection, error) {
 	if sslFlag == "" {
 		sslFlag = tlsModeNone
 	}
+
+	// Read Workload flag
+	result.workload = result.connURL.Query().Get("workload");
 
 	result.conn, err = result.establishSocketConnection()
 
@@ -444,6 +448,7 @@ func (v *connection) handshake() error {
 		ClientPID:        v.clientPID,
 		Autocommit:       v.autocommit,
 		OAuthAccessToken: v.oauthaccesstoken,
+		Workload:         v.workload,
 	}
 
 	if err := v.sendMessage(msg); err != nil {

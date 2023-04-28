@@ -1184,6 +1184,27 @@ func TestUnexpectedResult(t *testing.T) {
 	assertErr(t, err, "ERROR: whatever")
 }
 
+func TestWorkloadConnectionProperty(t *testing.T) {
+	connDB, err := sql.Open("vertica", myDBConnectString + "&workload=golangWorkload")
+	assertNoErr(t, err)
+
+	err = connDB.PingContext(ctx)
+	assertNoErr(t, err)
+	defer closeConnection(t, connDB)
+	rows, err := connDB.QueryContext(ctx, "SELECT contents FROM dc_client_server_messages " + 
+	                                      "WHERE session_id = current_session() " + 
+	                                      "AND message_type = '^+' " + 
+	                                      "AND contents LIKE '%workload%'")
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	var workload string
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&workload))
+		assertEqual(t, client_label, "workload: golangWorkload")
+	}
+}
+
 var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
 var verticaPassword = flag.String("password", os.Getenv("VERTICA_TEST_PASSWORD"), "Vertica password for this user")
 var verticaHostPort = flag.String("locator", "localhost:5433", "Vertica's host and port")
