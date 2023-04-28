@@ -35,6 +35,7 @@ package msgs
 import (
 	"fmt"
 	"os/user"
+	"os"
 
 	"github.com/elastic/go-sysinfo"
 )
@@ -70,6 +71,11 @@ func (m *FEStartupMsg) Flatten() ([]byte, byte) {
 	currentUser, err := user.Current()
 	if err == nil {
 		m.OSUsername = currentUser.Username
+	}
+
+	m.ClientOSHostname, err = os.Hostname()
+	if err == nil { 
+		m.ClientOSHostname = "";
 	}
 
 	buf := newMsgBuffer()

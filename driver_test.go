@@ -1205,6 +1205,24 @@ func TestWorkloadConnectionProperty(t *testing.T) {
 	}
 }
 
+func testClientOSHostnameProperty(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+	rows, err := connDB.QueryContext(ctx, "SELECT client_os_hostname FROM current_session")
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	var client_os_hostname, err = os.Hostname()
+	if err == nil { 
+		client_os_hostname = "";
+	}
+	var server_side_client_os_hostname string
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&server_side_client_os_hostname))
+		assertEqual(t, server_side_client_os_hostname, client_os_hostname)
+	}
+}
+
 var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
 var verticaPassword = flag.String("password", os.Getenv("VERTICA_TEST_PASSWORD"), "Vertica password for this user")
 var verticaHostPort = flag.String("locator", "localhost:5433", "Vertica's host and port")
