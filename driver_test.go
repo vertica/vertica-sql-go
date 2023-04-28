@@ -1201,7 +1201,7 @@ func TestWorkloadConnectionProperty(t *testing.T) {
 	var workload string
 	for rows.Next() {
 		assertNoErr(t, rows.Scan(&workload))
-		assertEqual(t, client_label, "workload: golangWorkload")
+		assertEqual(t, workload, "workload: golangWorkload")
 	}
 }
 
