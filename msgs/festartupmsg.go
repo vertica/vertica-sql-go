@@ -119,7 +119,7 @@ func (m *FEStartupMsg) String() string {
 		m.ClientOS,
 		m.OSUsername,
 		m.Autocommit,
-		len(m.OAuthAccessToken)),
+		len(m.OAuthAccessToken),
 		m.ClientOSHostname,
-		m.Workload
+		m.Workload)
 }
