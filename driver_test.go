@@ -1212,9 +1212,10 @@ func testClientOSHostnameProperty(t *testing.T) {
 	assertNoErr(t, err)
 	defer rows.Close()
 
-	var client_os_hostname, err = os.Hostname()
+	var client_os_hostname = ""
+	hostname, err := os.Hostname()
 	if err == nil { 
-		client_os_hostname = "";
+		client_os_hostname = hostname;
 	}
 	var server_side_client_os_hostname string
 	for rows.Next() {
