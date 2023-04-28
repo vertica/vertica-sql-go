@@ -73,9 +73,10 @@ func (m *FEStartupMsg) Flatten() ([]byte, byte) {
 		m.OSUsername = currentUser.Username
 	}
 
-	m.ClientOSHostname, err := os.Hostname()
-	if err != nil { 
-		m.ClientOSHostname = "";
+	m.ClientOSHostname = ""
+	hostname, err := os.Hostname()
+	if err == nil { 
+		m.ClientOSHostname = hostname;
 	}
 
 	buf := newMsgBuffer()
