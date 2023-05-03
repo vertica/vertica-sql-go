@@ -80,8 +80,8 @@ were args are one of the following:
 | tlsmode            | the ssl policy for this connection | 'none' (default) = don't use SSL for this connection |
 |                |                                    | 'server' = server must support SSL, but skip verification (INSECURE!) |
 |                |                                    | 'server-strict' = server must support SSL |
-| locator        | host and port of the Vertica connection | (default) localhost:5433
-| user           | Vertica user ID | (default) the userid of the running user |
+| locator        | host and port of the Vertica connection | (default) localhost:5433 |
+| user           | Vertica user name | (default) dbadmin |
 | password       | Vertica password for the connecting user | (default) (empty) |
 | oauth_access_token | the OAuth Access Token to connect to Vertica, only used for OAuth Authentication tests | (default) (empty) |
 
