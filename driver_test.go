@@ -178,14 +178,14 @@ func TestOAuthConnection(t *testing.T) {
 	assertNoErr(t, connDB.PingContext(ctx))
 
 	rows, err := connDB.QueryContext(ctx, "SELECT authentication_method FROM sessions WHERE session_id=(SELECT current_session())")
-    assertNoErr(t, err)
+	assertNoErr(t, err)
 	defer rows.Close()
 
 	var authMethod string
-    for rows.Next() {
-            assertNoErr(t, rows.Scan(&authMethod))
-			assertEqual(t, authMethod, "OAuth")
-    }
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&authMethod))
+		assertEqual(t, authMethod, "OAuth")
+	}
 }
 
 func TestTLSConfiguration(t *testing.T) {
@@ -1184,6 +1184,46 @@ func TestUnexpectedResult(t *testing.T) {
 	assertErr(t, err, "ERROR: whatever")
 }
 
+func TestWorkloadConnectionProperty(t *testing.T) {
+	connDB, err := sql.Open("vertica", myDBConnectString+"&workload=golangWorkload")
+	assertNoErr(t, err)
+
+	err = connDB.PingContext(ctx)
+	assertNoErr(t, err)
+	defer closeConnection(t, connDB)
+	rows, err := connDB.QueryContext(ctx, "SELECT contents FROM dc_client_server_messages "+
+		"WHERE session_id = current_session() "+
+		"AND message_type = '^+' "+
+		"AND contents LIKE '%workload%'")
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	var workload string
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&workload))
+		assertEqual(t, workload, "workload: golangWorkload")
+	}
+}
+
+func TestClientOSHostnameProperty(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+	rows, err := connDB.QueryContext(ctx, "SELECT client_os_hostname FROM current_session")
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	var client_os_hostname = ""
+	hostname, err := os.Hostname()
+	if err == nil {
+		client_os_hostname = hostname
+	}
+	var server_side_client_os_hostname string
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&server_side_client_os_hostname))
+		assertEqual(t, server_side_client_os_hostname, client_os_hostname)
+	}
+}
+
 var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
 var verticaPassword = flag.String("password", os.Getenv("VERTICA_TEST_PASSWORD"), "Vertica password for this user")
 var verticaHostPort = flag.String("locator", "localhost:5433", "Vertica's host and port")
@@ -1271,7 +1311,7 @@ func init() {
 	otherConnectString = "vertica://TestGuy:TestGuyPass@" + *verticaHostPort + "/?tlsmode=" + *tlsMode
 	badConnectString = "vertica://TestGuy:TestGuyBadPass@" + *verticaHostPort + "/?tlsmode=" + *tlsMode
 	failoverConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@badHost" + "?backup_server_node=abc.com:100000," + *verticaHostPort + ",localhost:port"
-	oauthConnectString = "vertica://" + *verticaUserName + "@" + *verticaHostPort +  "/?oauth_access_token=" + *oauthAccessToken + "&tlsmode=" + *tlsMode
+	oauthConnectString = "vertica://" + *verticaUserName + "@" + *verticaHostPort + "/?oauth_access_token=" + *oauthAccessToken + "&tlsmode=" + *tlsMode
 
 	ctx = context.Background()
 }
