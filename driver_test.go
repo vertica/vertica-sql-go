@@ -178,14 +178,14 @@ func TestOAuthConnection(t *testing.T) {
 	assertNoErr(t, connDB.PingContext(ctx))
 
 	rows, err := connDB.QueryContext(ctx, "SELECT authentication_method FROM sessions WHERE session_id=(SELECT current_session())")
-    assertNoErr(t, err)
+	assertNoErr(t, err)
 	defer rows.Close()
 
 	var authMethod string
-    for rows.Next() {
-            assertNoErr(t, rows.Scan(&authMethod))
-			assertEqual(t, authMethod, "OAuth")
-    }
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&authMethod))
+		assertEqual(t, authMethod, "OAuth")
+	}
 }
 
 func TestTLSConfiguration(t *testing.T) {
@@ -1185,16 +1185,16 @@ func TestUnexpectedResult(t *testing.T) {
 }
 
 func TestWorkloadConnectionProperty(t *testing.T) {
-	connDB, err := sql.Open("vertica", myDBConnectString + "&workload=golangWorkload")
+	connDB, err := sql.Open("vertica", myDBConnectString+"&workload=golangWorkload")
 	assertNoErr(t, err)
 
 	err = connDB.PingContext(ctx)
 	assertNoErr(t, err)
 	defer closeConnection(t, connDB)
-	rows, err := connDB.QueryContext(ctx, "SELECT contents FROM dc_client_server_messages " + 
-	                                      "WHERE session_id = current_session() " + 
-	                                      "AND message_type = '^+' " + 
-	                                      "AND contents LIKE '%workload%'")
+	rows, err := connDB.QueryContext(ctx, "SELECT contents FROM dc_client_server_messages "+
+		"WHERE session_id = current_session() "+
+		"AND message_type = '^+' "+
+		"AND contents LIKE '%workload%'")
 	assertNoErr(t, err)
 	defer rows.Close()
 
@@ -1205,7 +1205,7 @@ func TestWorkloadConnectionProperty(t *testing.T) {
 	}
 }
 
-func testClientOSHostnameProperty(t *testing.T) {
+func TestClientOSHostnameProperty(t *testing.T) {
 	connDB := openConnection(t)
 	defer closeConnection(t, connDB)
 	rows, err := connDB.QueryContext(ctx, "SELECT client_os_hostname FROM current_session")
@@ -1214,8 +1214,8 @@ func testClientOSHostnameProperty(t *testing.T) {
 
 	var client_os_hostname = ""
 	hostname, err := os.Hostname()
-	if err == nil { 
-		client_os_hostname = hostname;
+	if err == nil {
+		client_os_hostname = hostname
 	}
 	var server_side_client_os_hostname string
 	for rows.Next() {
@@ -1311,7 +1311,7 @@ func init() {
 	otherConnectString = "vertica://TestGuy:TestGuyPass@" + *verticaHostPort + "/?tlsmode=" + *tlsMode
 	badConnectString = "vertica://TestGuy:TestGuyBadPass@" + *verticaHostPort + "/?tlsmode=" + *tlsMode
 	failoverConnectString = "vertica://" + *verticaUserName + ":" + *verticaPassword + "@badHost" + "?backup_server_node=abc.com:100000," + *verticaHostPort + ",localhost:port"
-	oauthConnectString = "vertica://" + *verticaUserName + "@" + *verticaHostPort +  "/?oauth_access_token=" + *oauthAccessToken + "&tlsmode=" + *tlsMode
+	oauthConnectString = "vertica://" + *verticaUserName + "@" + *verticaHostPort + "/?oauth_access_token=" + *oauthAccessToken + "&tlsmode=" + *tlsMode
 
 	ctx = context.Background()
 }

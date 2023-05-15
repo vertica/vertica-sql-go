@@ -34,8 +34,8 @@ package msgs
 
 import (
 	"fmt"
-	"os/user"
 	"os"
+	"os/user"
 
 	"github.com/elastic/go-sysinfo"
 )
@@ -75,8 +75,8 @@ func (m *FEStartupMsg) Flatten() ([]byte, byte) {
 
 	m.ClientOSHostname = ""
 	hostname, err := os.Hostname()
-	if err == nil { 
-		m.ClientOSHostname = hostname;
+	if err == nil {
+		m.ClientOSHostname = hostname
 	}
 
 	buf := newMsgBuffer()
@@ -106,6 +106,7 @@ func (m *FEStartupMsg) Flatten() ([]byte, byte) {
 	buf.appendLabeledString("client_os", m.ClientOS)
 	buf.appendLabeledString("client_os_user_name", m.OSUsername)
 	buf.appendLabeledString("autocommit", m.Autocommit)
+	buf.appendLabeledString("protocol_compat", "VER")
 	buf.appendLabeledString("client_os_hostname", m.ClientOSHostname)
 	buf.appendLabeledString("workload", m.Workload)
 	buf.appendBytes([]byte{0})
@@ -115,7 +116,7 @@ func (m *FEStartupMsg) Flatten() ([]byte, byte) {
 
 func (m *FEStartupMsg) String() string {
 	return fmt.Sprintf(
-		"Startup (packet): ProtocolVersion:%08X, DriverName='%s', DriverVersion='%s', UserName='%s', Database='%s', SessionID='%s', ClientPID=%d, ClientOS='%s', ClientOSUserName='%s', Autocommit='%s', OAuthAccessToken=<length:%d>, ClientOSHostname='%s', Workload='%s'",
+		"Startup (packet): ProtocolVersion:%08X, DriverName='%s', DriverVersion='%s', UserName='%s', Database='%s', SessionID='%s', ClientPID=%d, ClientOS='%s', ClientOSUserName='%s', ClientOSHostname='%s', Autocommit='%s', OAuthAccessToken=<length:%d>, Workload='%s'",
 		m.ProtocolVersion,
 		m.DriverName,
 		m.DriverVersion,
@@ -125,8 +126,8 @@ func (m *FEStartupMsg) String() string {
 		m.ClientPID,
 		m.ClientOS,
 		m.OSUsername,
+		m.ClientOSHostname,
 		m.Autocommit,
 		len(m.OAuthAccessToken),
-		m.ClientOSHostname,
 		m.Workload)
 }

@@ -262,7 +262,7 @@ func newConnection(connString string) (*connection, error) {
 	}
 
 	// Read Workload flag
-	result.workload = result.connURL.Query().Get("workload");
+	result.workload = result.connURL.Query().Get("workload")
 
 	result.conn, err = result.establishSocketConnection()
 
