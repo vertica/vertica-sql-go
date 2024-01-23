@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.20', '1.19', '1.18', '1.17', '1.16']
+        go-version: ['1.21', '1.20', '1.19', '1.18', '1.17']
 
     steps:
       - name: Check out repository
@@ -26,7 +26,7 @@ jobs:
           docker run -d -p 8080:8080 \
             --name keycloak --network my-network \
             -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin \
-            quay.io/keycloak/keycloak:21.0.1 start-dev
+            quay.io/keycloak/keycloak:23.0.4 start-dev
           docker container ls
 
       - name: Set up a Vertica server docker container
@@ -34,7 +34,7 @@ jobs:
         run: |
           docker run -d -p 5433:5433 -p 5444:5444 \
             --name vertica_docker --network my-network \
-            vertica/vertica-ce:23.4.0-0
+            vertica/vertica-ce:24.1.0-0
           echo "Vertica startup ..."
           until docker exec vertica_docker test -f /data/vertica/VMart/agent_start.out; do \
             echo "..."; \
