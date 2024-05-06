@@ -388,7 +388,7 @@ func main() {
     }
 
     // Query a standard metric table in Vertica.
-    rows, err := connDB.QueryContext(ctx, "SELECT * FROM v_monitor.cpu_usage LIMIT 5")
+    rows, err := connDB.QueryContext(ctx, "SELECT node_name, start_time, end_time, average_cpu_usage_percent FROM v_monitor.cpu_usage LIMIT 5")
 
     if err != nil {
         testLogger.Fatal(err.Error())
