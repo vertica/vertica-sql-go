@@ -229,7 +229,7 @@ func TestBasicQuery(t *testing.T) {
 	connDB := openConnection(t)
 	defer closeConnection(t, connDB)
 
-	rows, err := connDB.QueryContext(ctx, "SELECT * FROM v_monitor.cpu_usage LIMIT 5")
+	rows, err := connDB.QueryContext(ctx, "SELECT node_name, start_time, end_time, average_cpu_usage_percent FROM v_monitor.cpu_usage LIMIT 5")
 	assertNoErr(t, err)
 
 	defer rows.Close()
