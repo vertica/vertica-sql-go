@@ -8,7 +8,7 @@ vertica-sql-go is a native Go adapter for the Vertica (http://www.vertica.com) d
 
 Please check out [release notes](https://github.com/vertica/vertica-sql-go/releases) to learn about the latest improvements.
 
-vertica-sql-go has been tested with Vertica 24.1.0 and Go 1.17/1.18/1.19/1.20/1.21.
+vertica-sql-go has been tested with Vertica 24.2.0 and Go 1.18/1.19/1.20/1.21/1.22.
 
 ## Installation
 
@@ -388,7 +388,7 @@ func main() {
     }
 
     // Query a standard metric table in Vertica.
-    rows, err := connDB.QueryContext(ctx, "SELECT * FROM v_monitor.cpu_usage LIMIT 5")
+    rows, err := connDB.QueryContext(ctx, "SELECT node_name, start_time, end_time, average_cpu_usage_percent FROM v_monitor.cpu_usage LIMIT 5")
 
     if err != nil {
         testLogger.Fatal(err.Error())
