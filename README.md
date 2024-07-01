@@ -161,7 +161,9 @@ defer rows.Close()
 
 ### Performing a query with arguments
 
-This is done in a similar manner on the client side.
+**Prerequisites**: Only SQL literals (i.e. query values) should be bound as arguments: they shouldn’t be used to merge table or field names to the query (_vertica-sql-go_ will try quoting the table name as a string value, generating invalid SQL as it is actually a SQL Identifier). If you need to generate dynamically SQL queries (for instance choosing dynamically a table name) you have to construct the full query yourself.
+
+
 
 ```Go
 rows, err := connDB.QueryContext(ctx, "SELECT name FROM MyTable WHERE id=?", 21)
