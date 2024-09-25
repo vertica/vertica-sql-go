@@ -260,7 +260,7 @@ func newConnection(connString string) (*connection, error) {
 	sslFlag := strings.ToLower(result.connURL.Query().Get("tlsmode"))
 	if sslFlag == "" {
 		// Set default to tlsModeServerPrefer
-		sslFlag = tlsModePrefer
+		sslFlag = tlsModeServerPrefer
 	}
 
 	// Read Workload flag
