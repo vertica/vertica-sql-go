@@ -259,7 +259,6 @@ func newConnection(connString string) (*connection, error) {
 	// Read SSL/TLS flag.
 	sslFlag := strings.ToLower(result.connURL.Query().Get("tlsmode"))
 	if sslFlag == "" {
-		// Set default to tlsModePrefer
 		sslFlag = tlsModeNone
 	}
 
