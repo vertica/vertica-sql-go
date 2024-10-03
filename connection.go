@@ -59,7 +59,7 @@ var (
 
 const (
 	tlsModeServer       = "server"
-	tlsModePrefer 		= "prefer"
+	tlsModePrefer       = "prefer"
 	tlsModeServerStrict = "server-strict"
 	tlsModeNone         = "none"
 )
