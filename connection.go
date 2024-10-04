@@ -666,6 +666,10 @@ func (v *connection) initializeSSL(sslFlag string) error {
 	}
 
 	if buf[0] == 'N' {
+		if sslFlag == tlsModePrefer {
+			connectionLogger.Info("SSL/TLS is not supported, proceeding with non-SSL connection in prefer mode")
+			return nil
+		}
 		return fmt.Errorf("SSL/TLS is not enabled on this server")
 	}
 
@@ -679,7 +683,7 @@ func (v *connection) initializeSSL(sslFlag string) error {
 		v.conn = tls.Client(v.conn, &tls.Config{InsecureSkipVerify: true})
 	case tlsModePrefer:
 		connectionLogger.Info("enabling SSL/TLS prefer mode")
-		v.conn = tls.Client(v.conn, &tls.Config{ServerName: v.connURL.Hostname(), InsecureSkipVerify: true})
+		v.conn = tls.Client(v.conn, &tls.Config{InsecureSkipVerify: true})
 	case tlsModeServerStrict:
 		connectionLogger.Info("enabling SSL/TLS server strict mode")
 		v.conn = tls.Client(v.conn, &tls.Config{ServerName: v.connURL.Hostname()})

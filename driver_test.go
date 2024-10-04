@@ -201,7 +201,11 @@ func TestTLSConfiguration(t *testing.T) {
 		switch *tlsMode {
 		case "none":
 			assertEqual(t, sslState, "None")
-		case "server", "prefer", "server-strict":
+		case "prefer":
+			if sslState != "None" && sslState != "Server" {
+				t.Fatalf("Expected ssl_state to be 'None' or 'Server', but got '%s'", sslState)
+			}
+		case "server", "server-strict":
 			assertEqual(t, sslState, "Server")
 		case "custom":
 			assertEqual(t, sslState, "Mutual")
