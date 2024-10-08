@@ -58,8 +58,8 @@ var (
 )
 
 const (
-	tlsModeServer       = "server"
 	tlsModePrefer       = "prefer"
+	tlsModeServer       = "server"
 	tlsModeServerStrict = "server-strict"
 	tlsModeNone         = "none"
 )
@@ -86,9 +86,9 @@ func (t *_tlsConfigs) get(name string) (*tls.Config, bool) {
 var tlsConfigs = &_tlsConfigs{m: make(map[string]*tls.Config)}
 
 // db, err := sql.Open("vertica", "user@tcp(localhost:3306)/test?tlsmode=custom")
-// reserved modes: 'server', 'prefer', 'server-strict' or 'none'
+// reserved modes: 'prefer', 'server', 'server-strict' or 'none'
 func RegisterTLSConfig(name string, config *tls.Config) error {
-	if name == tlsModeServer || name == tlsModePrefer || name == tlsModeServerStrict || name == tlsModeNone {
+	if name == tlsModePrefer || name == tlsModeServer || name == tlsModeServerStrict || name == tlsModeNone {
 		return fmt.Errorf("config name '%s' is reserved therefore cannot be used", name)
 	}
 	return tlsConfigs.add(name, config)
@@ -678,11 +678,11 @@ func (v *connection) initializeSSL(sslFlag string) error {
 	}
 
 	switch sslFlag {
-	case tlsModeServer:
-		connectionLogger.Info("enabling SSL/TLS server mode")
-		v.conn = tls.Client(v.conn, &tls.Config{InsecureSkipVerify: true})
 	case tlsModePrefer:
 		connectionLogger.Info("enabling SSL/TLS prefer mode")
+		v.conn = tls.Client(v.conn, &tls.Config{InsecureSkipVerify: true})
+	case tlsModeServer:
+		connectionLogger.Info("enabling SSL/TLS server mode")
 		v.conn = tls.Client(v.conn, &tls.Config{InsecureSkipVerify: true})
 	case tlsModeServerStrict:
 		connectionLogger.Info("enabling SSL/TLS server strict mode")
