@@ -201,6 +201,10 @@ func TestTLSConfiguration(t *testing.T) {
 		switch *tlsMode {
 		case "none":
 			assertEqual(t, sslState, "None")
+		case "prefer":
+			if sslState != "None" && sslState != "Server" {
+				t.Fatalf("Expected ssl_state to be 'None' or 'Server', but got '%s'", sslState)
+			}
 		case "server", "server-strict":
 			assertEqual(t, sslState, "Server")
 		case "custom":
@@ -1227,7 +1231,7 @@ func TestClientOSHostnameProperty(t *testing.T) {
 var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
 var verticaPassword = flag.String("password", os.Getenv("VERTICA_TEST_PASSWORD"), "Vertica password for this user")
 var verticaHostPort = flag.String("locator", "localhost:5433", "Vertica's host and port")
-var tlsMode = flag.String("tlsmode", "none", "SSL/TLS mode (none, server, server-strict, custom)")
+var tlsMode = flag.String("tlsmode", "none", "SSL/TLS mode (none, prefer, server, server-strict, custom)")
 var usePreparedStmts = flag.Bool("use_prepared_statements", true, "whether to use prepared statements for all queries/executes")
 var oauthAccessToken = flag.String("oauth_access_token", os.Getenv("VERTICA_TEST_OAUTH_ACCESS_TOKEN"), "the OAuth Access Token to connect to Vertica")
 
