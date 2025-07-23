@@ -33,6 +33,7 @@ package vertigo
 // THE SOFTWARE.
 
 import (
+	"bufio"
 	"context"
 	"crypto/md5"
 	"crypto/sha512"
@@ -44,6 +45,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -115,6 +117,7 @@ type connection struct {
 	dead             bool // used if a ROLLBACK severity error is encountered
 	sessMutex        sync.Mutex
 	workload         string
+	TOTP             string
 }
 
 // Begin - Begin starts and returns a new transaction. (DEPRECATED)
@@ -549,6 +552,8 @@ func (v *connection) defaultMessageHandler(bMsg msgs.BackEndMsg) (bool, error) {
 			err = v.authSendSHA512Password(msg.ExtraAuthData)
 		case common.AuthenticationOAuth:
 			err = v.authSendOAuthAccessToken()
+		case common.AuthenticationTOTP:
+			err = v.authSendTOTP()
 		default:
 			handled = false
 			err = fmt.Errorf("unsupported authentication scheme: %d", msg.Response)
@@ -748,6 +753,33 @@ func (v *connection) authSendSHA512Password(extraAuthData []byte) error {
 func (v *connection) authSendOAuthAccessToken() error {
 	msg := &msgs.FEPasswordMsg{PasswordData: v.oauthaccesstoken}
 	return v.sendMessage(msg)
+}
+
+func (v *connection) authSendTOTP() error {
+	fmt.Print("Enter your TOTP code:")
+	reader := bufio.NewReader(os.Stdin)
+	totpInput, err := reader.ReadString('\n')
+
+	if err != nil {
+		return fmt.Errorf("TOTP is not able to read properly")
+	}
+	// Trim any trailing newline or spaces
+	totpInput = strings.TrimSpace(totpInput)
+
+	// Validation
+	if totpInput == "" {
+		return fmt.Errorf("TOTP is required but not set")
+	}
+	if !regexp.MustCompile(`^\d{6}$`).MatchString(totpInput) {
+		return fmt.Errorf("TOTP must contain 6 digits only")
+	}
+
+	v.TOTP = totpInput
+	msg := &msgs.FEPasswordMsg{
+        PasswordData: v.TOTP,
+    }
+
+    return v.sendMessage(msg)
 }
 
 func (v *connection) sync() error {

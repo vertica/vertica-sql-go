@@ -49,6 +49,8 @@ import (
 	"testing"
 	"time"
 
+    "github.com/pquerna/otp/totp"
+    "github.com/stretchr/testify/assert"
 	"github.com/vertica/vertica-sql-go/logger"
 )
 
@@ -186,6 +188,48 @@ func TestOAuthConnection(t *testing.T) {
 		assertNoErr(t, rows.Scan(&authMethod))
 		assertEqual(t, authMethod, "OAuth")
 	}
+}
+
+func TestTOTPConnection(t *testing.T) {
+    // Generate a deterministic TOTP code for testing
+    secret := "JBSWY3DPEHPK3PXP" // Example static base32 secret
+    totpCode, err := totp.GenerateCode(secret, time.Now())
+    assert.NoError(t, err)
+    fmt.Println("Generated test TOTP:", totpCode)
+
+    // Mock os.Stdin with the TOTP code (simulating user input)
+    originalStdin := os.Stdin
+    r, w, _ := os.Pipe()
+    _, _ = w.WriteString(totpCode + "\n")
+    _ = w.Close()
+    os.Stdin = r
+    defer func() {
+        os.Stdin = originalStdin
+    }()
+
+    // Construct connection string
+    connStr := "vertica://" + *verticaUserName + "@" + *verticaHostPort + "/?tlsmode=" + *tlsMode
+
+    // Open connection
+    db, err := sql.Open("vertica", connStr)
+    assert.NoError(t, err)
+    defer db.Close()
+
+    // Ping to trigger TOTP prompt
+    ctx := context.Background()
+    err = db.PingContext(ctx)
+    assert.NoError(t, err)
+
+    // Optional: Run a simple query to validate
+    rows, err := db.Query("SELECT version()")
+    assert.NoError(t, err)
+    defer rows.Close()
+
+    for rows.Next() {
+        var version string
+        _ = rows.Scan(&version)
+        fmt.Println("Connected to Vertica Version:", version)
+    }
 }
 
 func TestTLSConfiguration(t *testing.T) {
