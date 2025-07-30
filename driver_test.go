@@ -191,45 +191,74 @@ func TestOAuthConnection(t *testing.T) {
 }
 
 func TestTOTPConnection(t *testing.T) {
-    // Generate a deterministic TOTP code for testing
-    secret := "JBSWY3DPEHPK3PXP" // Example static base32 secret
+    // Common test setup
+    secret := "O5D7DQICJTM34AZROWHSAO4O53ELRJN3" // Example static base32 secret
     totpCode, err := totp.GenerateCode(secret, time.Now())
     assert.NoError(t, err)
     fmt.Println("Generated test TOTP:", totpCode)
 
-    // Mock os.Stdin with the TOTP code (simulating user input)
-    originalStdin := os.Stdin
-    r, w, _ := os.Pipe()
-    _, _ = w.WriteString(totpCode + "\n")
-    _ = w.Close()
-    os.Stdin = r
-    defer func() {
-        os.Stdin = originalStdin
-    }()
+    // ----- Scenario 1: TOTP passed via connection string -----
+    t.Run("WithTOTPInConnStr", func(t *testing.T) {
+        connStr := fmt.Sprintf(
+            "vertica://%s@%s/?tlsmode=%s&totp=%s",
+            *verticaUserName,
+            *verticaHostPort,
+            *tlsMode,
+            totpCode,
+        )
 
-    // Construct connection string
-    connStr := "vertica://" + *verticaUserName + "@" + *verticaHostPort + "/?tlsmode=" + *tlsMode
+        db, err := sql.Open("vertica", connStr)
+        assert.NoError(t, err)
+        defer db.Close()
 
-    // Open connection
-    db, err := sql.Open("vertica", connStr)
-    assert.NoError(t, err)
-    defer db.Close()
+        err = db.PingContext(context.Background())
+        assert.NoError(t, err)
 
-    // Ping to trigger TOTP prompt
-    ctx := context.Background()
-    err = db.PingContext(ctx)
-    assert.NoError(t, err)
+        rows, err := db.Query("SELECT version()")
+        assert.NoError(t, err)
+        defer rows.Close()
 
-    // Optional: Run a simple query to validate
-    rows, err := db.Query("SELECT version()")
-    assert.NoError(t, err)
-    defer rows.Close()
+        for rows.Next() {
+            var version string
+            _ = rows.Scan(&version)
+            fmt.Println("[ConnStr] Connected to Vertica Version:", version)
+        }
+    })
 
-    for rows.Next() {
-        var version string
-        _ = rows.Scan(&version)
-        fmt.Println("Connected to Vertica Version:", version)
-    }
+    // ----- Scenario 2: TOTP entered via stdin -----
+    t.Run("WithTOTPFromStdin", func(t *testing.T) {
+        // Simulate user input by replacing os.Stdin
+        originalStdin := os.Stdin
+        r, w, _ := os.Pipe()
+        _, _ = w.WriteString(totpCode + "\n")
+        _ = w.Close()
+        os.Stdin = r
+        defer func() { os.Stdin = originalStdin }()
+
+        connStr := fmt.Sprintf(
+            "vertica://%s@%s/?tlsmode=%s", // no &totp here
+            *verticaUserName,
+            *verticaHostPort,
+            *tlsMode,
+        )
+
+        db, err := sql.Open("vertica", connStr)
+        assert.NoError(t, err)
+        defer db.Close()
+
+        err = db.PingContext(context.Background())
+        assert.NoError(t, err)
+
+        rows, err := db.Query("SELECT version()")
+        assert.NoError(t, err)
+        defer rows.Close()
+
+        for rows.Next() {
+            var version string
+            _ = rows.Scan(&version)
+            fmt.Println("[Stdin] Connected to Vertica Version:", version)
+        }
+    })
 }
 
 func TestTLSConfiguration(t *testing.T) {

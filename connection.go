@@ -117,7 +117,7 @@ type connection struct {
 	dead             bool // used if a ROLLBACK severity error is encountered
 	sessMutex        sync.Mutex
 	workload         string
-	TOTP             string
+	totp             string
 }
 
 // Begin - Begin starts and returns a new transaction. (DEPRECATED)
@@ -244,6 +244,7 @@ func newConnection(connString string) (*connection, error) {
 
 	// Read OAuth access token flag.
 	result.oauthaccesstoken = result.connURL.Query().Get("oauth_access_token")
+	result.totp = result.connURL.Query().Get("totp")
 
 	// Read connection load balance flag.
 	loadBalanceFlag := result.connURL.Query().Get("connection_load_balance")
@@ -453,6 +454,7 @@ func (v *connection) handshake() error {
 		Autocommit:       v.autocommit,
 		OAuthAccessToken: v.oauthaccesstoken,
 		Workload:         v.workload,
+		Totp:             v.totp,
 	}
 
 	if err := v.sendMessage(msg); err != nil {
@@ -756,30 +758,40 @@ func (v *connection) authSendOAuthAccessToken() error {
 }
 
 func (v *connection) authSendTOTP() error {
-	fmt.Print("Enter your TOTP code:")
 	reader := bufio.NewReader(os.Stdin)
-	totpInput, err := reader.ReadString('\n')
+	attempts := 3
 
-	if err != nil {
-		return fmt.Errorf("TOTP is not able to read properly")
+	var totpInput string
+	for i := 0; i < attempts; i++ {
+		fmt.Print("Enter your TOTP code: ")
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to read TOTP input: %v", err)
+		}
+		totpInput = strings.TrimSpace(input)
+
+		if totpInput == "" {
+			fmt.Println("TOTP is required and cannot be blank.")
+			continue
+		}
+
+		if !regexp.MustCompile(`^\d+$`).MatchString(totpInput) {
+			return fmt.Errorf("TOTP must contain digits only")
+		}
+
+		// Valid input
+		break
 	}
-	// Trim any trailing newline or spaces
-	totpInput = strings.TrimSpace(totpInput)
 
-	// Validation
 	if totpInput == "" {
-		return fmt.Errorf("TOTP is required but not set")
-	}
-	if !regexp.MustCompile(`^\d{6}$`).MatchString(totpInput) {
-		return fmt.Errorf("TOTP must contain 6 digits only")
+		return fmt.Errorf("TOTP not provided after %d attempts", attempts)
 	}
 
-	v.TOTP = totpInput
+	v.totp = totpInput
 	msg := &msgs.FEPasswordMsg{
-        PasswordData: v.TOTP,
-    }
-
-    return v.sendMessage(msg)
+		PasswordData: v.totp,
+	}
+	return v.sendMessage(msg)
 }
 
 func (v *connection) sync() error {
