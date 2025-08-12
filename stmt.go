@@ -52,7 +52,8 @@ import (
 )
 
 var (
-	stmtLogger = logger.New("stmt")
+	stmtLogger        = logger.New("stmt")
+	emailRegexPattern = regexp.MustCompile(`[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
 )
 
 type parseState int
@@ -87,11 +88,15 @@ func newStmt(connection *connection, command string) (*stmt, error) {
 		preparedName: fmt.Sprintf("S%d%d%d", os.Getpid(), time.Now().Unix(), rand.Int31()),
 		parseState:   parseStateUnparsed,
 	}
-	argCounter := func() string {
-		s.posArgCnt++
-		return "?"
+	if emailRegexPattern.MatchString(command) {
+		s.command = command
+	} else {
+		argCounter := func() string {
+			s.posArgCnt++
+			return "?"
+		}
+		s.command = parse.Lex(command, parse.WithNamedCallback(s.pushNamed), parse.WithPositionalSubstitution(argCounter))
 	}
-	s.command = parse.Lex(command, parse.WithNamedCallback(s.pushNamed), parse.WithPositionalSubstitution(argCounter))
 	return s, nil
 }
 
