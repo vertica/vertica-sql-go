@@ -1286,12 +1286,20 @@ func TestEmailParseStatement(t *testing.T) {
 	userName := "testuser@vertica.com"
 	role := "Vertica Database Admin"
 
+	dropRole := fmt.Sprintf("DROP ROLE IF EXISTS  \"%s\" CASCADE", role)
+	createRole := fmt.Sprintf("CREATE ROLE  \"%s\"", role)
 	dropUser := fmt.Sprintf("DROP USER IF EXISTS  \"%s\"", userName)
 	createUser := fmt.Sprintf("CREATE USER \"%s\"", userName)
 	grantRole := fmt.Sprintf("Grant \"%s\" to \"%s\"", role, userName)
 	selectUser := fmt.Sprintf("SELECT user_name,all_roles FROM USERS WHERE user_name='%s'", userName)
 
-	_, err := connDB.QueryContext(ctx, dropUser)
+	_, err := connDB.QueryContext(ctx, dropRole)
+	assertNoErr(t, err)
+
+	_, err = connDB.QueryContext(ctx, createRole)
+	assertNoErr(t, err)
+
+	_, err = connDB.QueryContext(ctx, dropUser)
 	assertNoErr(t, err)
 
 	_, err = connDB.QueryContext(ctx, createUser)
