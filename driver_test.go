@@ -44,6 +44,7 @@ import (
 	"io/ioutil"
 	"os"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -191,74 +192,143 @@ func TestOAuthConnection(t *testing.T) {
 }
 
 func TestTOTPConnection(t *testing.T) {
-    // Common test setup
-    secret := "O5D7DQICJTM34AZROWHSAO4O53ELRJN3" // Example static base32 secret
-    totpCode, err := totp.GenerateCode(secret, time.Now())
-    assert.NoError(t, err)
-    fmt.Println("Generated test TOTP:", totpCode)
+	ctx := context.Background()
 
-    // ----- Scenario 1: TOTP passed via connection string -----
-    t.Run("WithTOTPInConnStr", func(t *testing.T) {
-        connStr := fmt.Sprintf(
-            "vertica://%s@%s/?tlsmode=%s&totp=%s",
-            *verticaUserName,
-            *verticaHostPort,
-            *tlsMode,
-            totpCode,
-        )
+	testUser := "mfa_user"
+	testPassword := "pwd"
 
-        db, err := sql.Open("vertica", connStr)
-        assert.NoError(t, err)
-        defer db.Close()
+	// Admin connection
+	adminConnStr := fmt.Sprintf(
+		"vertica://%s@%s/?tlsmode=%s",
+		*verticaUserName, *verticaHostPort, *tlsMode,
+	)
+	adminDB, err := sql.Open("vertica", adminConnStr)
+	assert.NoError(t, err)
+	defer adminDB.Close()
 
-        err = db.PingContext(context.Background())
-        assert.NoError(t, err)
+	// Step 1: Create MFA user
+	_, err = adminDB.ExecContext(ctx,
+		fmt.Sprintf("CREATE USER %s IDENTIFIED BY '%s' ENFORCEMFA;", testUser, testPassword))
+	if err != nil {
+		t.Fatalf("Failed to create MFA user: %v", err)
+	}
 
-        rows, err := db.Query("SELECT version()")
-        assert.NoError(t, err)
-        defer rows.Close()
+	// Step 2: Capture NOTICE (TOTP secret)
+	var notice string
+	conn, err := adminDB.Conn(ctx)
+	assert.NoError(t, err)
+	defer conn.Close()
 
-        for rows.Next() {
-            var version string
-            _ = rows.Scan(&version)
-            fmt.Println("[ConnStr] Connected to Vertica Version:", version)
-        }
-    })
+	err = conn.Raw(func(driverConn interface{}) error {
+		// cast to the underlying driver connection
+		if c, ok := driverConn.(interface{ LastNotice() string }); ok {
+			notice = c.LastNotice()
+		}
+		return nil
+	})
+	assert.NoError(t, err)
 
-    // ----- Scenario 2: TOTP entered via stdin -----
-    t.Run("WithTOTPFromStdin", func(t *testing.T) {
-        // Simulate user input by replacing os.Stdin
-        originalStdin := os.Stdin
-        r, w, _ := os.Pipe()
-        _, _ = w.WriteString(totpCode + "\n")
-        _ = w.Close()
-        os.Stdin = r
-        defer func() { os.Stdin = originalStdin }()
+	t.Logf("Server NOTICE: %s", notice)
 
-        connStr := fmt.Sprintf(
-            "vertica://%s@%s/?tlsmode=%s", // no &totp here
-            *verticaUserName,
-            *verticaHostPort,
-            *tlsMode,
-        )
+	// Extract secret from notice
+	re := regexp.MustCompile(`"([A-Z2-7]{32})"`)
+	match := re.FindStringSubmatch(notice)
+	if len(match) < 2 {
+		t.Fatalf("Failed to extract TOTP secret from notice: %s", notice)
+	}
+	secret := match[1]
+	fmt.Println("[TestSetup] Extracted secret:", secret)
 
-        db, err := sql.Open("vertica", connStr)
-        assert.NoError(t, err)
-        defer db.Close()
+	// Step 3: Generate valid TOTP
+	totpCode, err := totp.GenerateCode(secret, time.Now())
+	assert.NoError(t, err)
+	fmt.Println("[TestSetup] Generated TOTP:", totpCode)
 
-        err = db.PingContext(context.Background())
-        assert.NoError(t, err)
+	// ---------- Scenario 1: Valid TOTP in conn string ----------
+	t.Run("WithTOTPInConnStr", func(t *testing.T) {
+		connStr := fmt.Sprintf(
+			"vertica://%s:%s@%s/?tlsmode=%s&totp=%s",
+			testUser, testPassword, *verticaHostPort, *tlsMode, totpCode,
+		)
 
-        rows, err := db.Query("SELECT version()")
-        assert.NoError(t, err)
-        defer rows.Close()
+		db, err := sql.Open("vertica", connStr)
+		assert.NoError(t, err)
+		defer db.Close()
 
-        for rows.Next() {
-            var version string
-            _ = rows.Scan(&version)
-            fmt.Println("[Stdin] Connected to Vertica Version:", version)
-        }
-    })
+		err = db.PingContext(ctx)
+		assert.NoError(t, err)
+
+		rows, err := db.Query("SELECT version()")
+		assert.NoError(t, err)
+		defer rows.Close()
+
+		for rows.Next() {
+			var version string
+			_ = rows.Scan(&version)
+			fmt.Println("[ConnStr] Connected to Vertica Version:", version)
+		}
+	})
+
+	// ---------- Scenario 2: Valid TOTP via stdin ----------
+	t.Run("WithTOTPFromStdin", func(t *testing.T) {
+		originalStdin := os.Stdin
+		r, w, _ := os.Pipe()
+		_, _ = w.WriteString(totpCode + "\n")
+		_ = w.Close()
+		os.Stdin = r
+		defer func() { os.Stdin = originalStdin }()
+
+		connStr := fmt.Sprintf(
+			"vertica://%s:%s@%s/?tlsmode=%s",
+			testUser, testPassword, *verticaHostPort, *tlsMode,
+		)
+
+		db, err := sql.Open("vertica", connStr)
+		assert.NoError(t, err)
+		defer db.Close()
+
+		err = db.PingContext(ctx)
+		assert.NoError(t, err)
+	})
+
+	// ---------- Scenario 3: Invalid TOTP in conn string ----------
+	t.Run("InvalidTOTPConnStr", func(t *testing.T) {
+		invalidCode := "123456"
+		connStr := fmt.Sprintf(
+			"vertica://%s:%s@%s/?tlsmode=%s&totp=%s",
+			testUser, testPassword, *verticaHostPort, *tlsMode, invalidCode,
+		)
+
+		db, err := sql.Open("vertica", connStr)
+		assert.NoError(t, err)
+		defer db.Close()
+
+		err = db.PingContext(ctx)
+		assert.Error(t, err, "Expected failure with invalid TOTP but succeeded")
+	})
+
+	// ---------- Scenario 4: Invalid TOTP via stdin ----------
+	t.Run("InvalidTOTPFromStdin", func(t *testing.T) {
+		invalidCode := "123456"
+		originalStdin := os.Stdin
+		r, w, _ := os.Pipe()
+		_, _ = w.WriteString(invalidCode + "\n")
+		_ = w.Close()
+		os.Stdin = r
+		defer func() { os.Stdin = originalStdin }()
+
+		connStr := fmt.Sprintf(
+			"vertica://%s:%s@%s/?tlsmode=%s",
+			testUser, testPassword, *verticaHostPort, *tlsMode,
+		)
+
+		db, err := sql.Open("vertica", connStr)
+		assert.NoError(t, err)
+		defer db.Close()
+
+		err = db.PingContext(ctx)
+		assert.Error(t, err, "Expected failure with invalid stdin TOTP but succeeded")
+	})
 }
 
 func TestTLSConfiguration(t *testing.T) {

@@ -118,6 +118,7 @@ type connection struct {
 	sessMutex        sync.Mutex
 	workload         string
 	totp             string
+	lastNotice       string
 }
 
 // Begin - Begin starts and returns a new transaction. (DEPRECATED)
@@ -561,7 +562,9 @@ func (v *connection) defaultMessageHandler(bMsg msgs.BackEndMsg) (bool, error) {
 			err = fmt.Errorf("unsupported authentication scheme: %d", msg.Response)
 		}
 	case *msgs.BENoticeMsg:
-		break
+		// Capture NOTICE text so tests (like MFA secret retrieval) can parse it
+		v.lastNotice = msg.Message
+		connectionLogger.Info("NOTICE: %s", msg.Message)
 	case *msgs.BEParamStatusMsg:
 		connectionLogger.Debug("%v", msg)
 	default:
@@ -817,6 +820,10 @@ func (v *connection) sync() error {
 	}
 
 	return nil
+}
+
+func (v *connection) LastNotice() string {
+    return v.lastNotice
 }
 
 func (v *connection) lockSessionMutex() {
