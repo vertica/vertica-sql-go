@@ -206,41 +206,57 @@ func TestTOTPConnection(t *testing.T) {
 	assert.NoError(t, err)
 	defer adminDB.Close()
 
-	// Step 1: Create MFA user
+	// Step 1: Ensure the user is deleted if it already exists
+	_, err = adminDB.ExecContext(ctx, fmt.Sprintf("DROP USER IF EXISTS %s;", testUser))
+	assert.NoError(t, err)
+
+	// Step 2: Create MFA user
 	_, err = adminDB.ExecContext(ctx,
 		fmt.Sprintf("CREATE USER %s IDENTIFIED BY '%s' ENFORCEMFA;", testUser, testPassword))
 	if err != nil {
 		t.Fatalf("Failed to create MFA user: %v", err)
 	}
 
-	// Step 2: Capture NOTICE (TOTP secret)
-	var notice string
-	conn, err := adminDB.Conn(ctx)
-	assert.NoError(t, err)
+	// Clean-up: Delete the user after test execution
+	defer func() {
+		_, err := adminDB.ExecContext(ctx, fmt.Sprintf("DROP USER IF EXISTS %s;", testUser))
+		if err != nil {
+			t.Logf("Failed to clean up mfa_user: %v", err)
+		} else {
+			t.Logf("Successfully cleaned up mfa_user")
+		}
+	}()
+
+	// Step 3: Capture NOTICE (TOTP secret)
+	var totpSecret string
+	userConnStr := fmt.Sprintf(
+		"vertica://%s:%s@%s/?tlsmode=%s",
+		testUser, testPassword, *verticaHostPort, *tlsMode,
+	)
+	// Try to connect to capture the error (this should fail with MFA enrollment)
+	conn, err := sql.Open("vertica", userConnStr)
+	if err != nil {
+		t.Fatalf("Failed to open connection: %v", err)
+	}
 	defer conn.Close()
 
-	err = conn.Raw(func(driverConn interface{}) error {
-		// cast to the underlying driver connection
-		if c, ok := driverConn.(interface{ LastNotice() string }); ok {
-			notice = c.LastNotice()
+	// Attempt to connect, expecting MFA error
+	err = conn.PingContext(ctx)
+	if err != nil {
+		// Check the error message for the TOTP secret
+		re := regexp.MustCompile(`"([A-Z0-9]{32})"`)
+		match := re.FindStringSubmatch(err.Error())
+		if len(match) < 2 {
+			t.Fatalf("Failed to extract TOTP secret from error: %s", err.Error())
 		}
-		return nil
-	})
-	assert.NoError(t, err)
-
-	t.Logf("Server NOTICE: %s", notice)
-
-	// Extract secret from notice
-	re := regexp.MustCompile(`"([A-Z2-7]{32})"`)
-	match := re.FindStringSubmatch(notice)
-	if len(match) < 2 {
-		t.Fatalf("Failed to extract TOTP secret from notice: %s", notice)
+		totpSecret = match[1]
+		t.Logf("Extracted TOTP secret: %s", totpSecret)
+	} else {
+		t.Fatalf("Expected MFA enrollment error was not thrown")
 	}
-	secret := match[1]
-	fmt.Println("[TestSetup] Extracted secret:", secret)
 
-	// Step 3: Generate valid TOTP
-	totpCode, err := totp.GenerateCode(secret, time.Now())
+	// Step 4: Generate valid TOTP
+	totpCode, err := totp.GenerateCode(totpSecret, time.Now())
 	assert.NoError(t, err)
 	fmt.Println("[TestSetup] Generated TOTP:", totpCode)
 
@@ -1371,9 +1387,9 @@ func TestClientOSHostnameProperty(t *testing.T) {
 	}
 }
 
-var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
-var verticaPassword = flag.String("password", os.Getenv("VERTICA_TEST_PASSWORD"), "Vertica password for this user")
-var verticaHostPort = flag.String("locator", "localhost:5433", "Vertica's host and port")
+var verticaUserName = flag.String("user", "release", "the user name to connect to Vertica")
+var verticaPassword = flag.String("password", "", "Vertica password for this user")
+var verticaHostPort = flag.String("locator", "10.20.80.132:5433", "Vertica's host and port")
 var tlsMode = flag.String("tlsmode", "none", "SSL/TLS mode (none, prefer, server, server-strict, custom)")
 var usePreparedStmts = flag.Bool("use_prepared_statements", true, "whether to use prepared statements for all queries/executes")
 var oauthAccessToken = flag.String("oauth_access_token", os.Getenv("VERTICA_TEST_OAUTH_ACCESS_TOKEN"), "the OAuth Access Token to connect to Vertica")
