@@ -315,7 +315,13 @@ func (v *connection) establishSocketConnection() (net.Conn, error) {
 		for _, j := range r.Perm(len(ips)) {
 			// j comes from random permutation of indexes - ips[j] will access a random resolved ip
 			addrString := net.JoinHostPort(ips[j].String(), port) // IPv6 returns "[host]:port"
-			conn, err := net.Dial("tcp", addrString)
+
+			if customDialer == nil {
+				customDialer = (&net.Dialer{}).DialContext
+			}
+			conn, err := customDialer(context.Background(), "tcp", addrString)
+			//conn, err := net.Dial("tcp", addrString)
+
 			if err != nil {
 				err_msg += fmt.Sprintf("\n  '%s': %s", v.connHostsList[i], err.Error())
 			} else {
@@ -781,4 +787,35 @@ func (v *connection) lockSessionMutex() {
 
 func (v *connection) unlockSessionMutex() {
 	v.sessMutex.Unlock()
+}
+
+// ** Custom Dialer **/
+type CustomDialer func(ctx context.Context, network, addr string) (net.Conn, error)
+type connector struct {
+	dsn       string
+	dialerCtx CustomDialer
+}
+
+var customDialer func(ctx context.Context, network, addr string) (net.Conn, error)
+
+func SetCustomDialer(dialer func(ctx context.Context, network, addr string) (net.Conn, error)) {
+	customDialer = dialer
+}
+
+func NewConnector(dsn string, dialer CustomDialer) (driver.Connector, error) {
+	return &connector{dsn: dsn, dialerCtx: dialer}, nil
+}
+func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
+	if c.dialerCtx != nil {
+		SetCustomDialer(c.dialerCtx)
+	}
+	drv := &Driver{}
+	conn, err := drv.Open(c.dsn)
+	if err != nil {
+		return nil, err
+	}
+	return conn, nil
+}
+func (c *connector) Driver() driver.Driver {
+	return &Driver{}
 }
