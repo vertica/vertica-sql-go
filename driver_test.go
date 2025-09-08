@@ -42,6 +42,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"reflect"
 	"strings"
@@ -1277,6 +1278,41 @@ func getTlsConfig() (*tls.Config, error) {
 	}
 	tlsConfig.BuildNameToCertificate()
 	return tlsConfig, nil
+}
+
+func openDialerConnection(t *testing.T, setupScript ...interface{}) *sql.DB {
+
+	customDialer := func(ctx context.Context, network, addr string) (net.Conn, error) { return net.Dial("tcp", addr) }
+	connector, _ := NewConnector(myDBConnectString, customDialer)
+	connDB := sql.OpenDB(connector)
+
+	err := connDB.PingContext(ctx)
+	assertNoErr(t, err)
+
+	if len(setupScript) > 0 {
+		assertExecSQL(t, connDB, setupScript...)
+	}
+
+	return connDB
+}
+
+func TestCustomDialer(t *testing.T) {
+	connDB := openDialerConnection(t)
+	defer closeConnection(t, connDB)
+	rows, err := connDB.QueryContext(ctx, "SELECT client_os_hostname FROM current_session")
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	var client_os_hostname = ""
+	hostname, err := os.Hostname()
+	if err == nil {
+		client_os_hostname = hostname
+	}
+	var server_side_client_os_hostname string
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&server_side_client_os_hostname))
+		assertEqual(t, server_side_client_os_hostname, client_os_hostname)
+	}
 }
 
 func init() {
