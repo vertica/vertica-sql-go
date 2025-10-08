@@ -44,11 +44,14 @@ import (
 	"io/ioutil"
 	"os"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+    "github.com/pquerna/otp/totp"
+    "github.com/stretchr/testify/assert"
 	"github.com/vertica/vertica-sql-go/logger"
 )
 
@@ -186,6 +189,180 @@ func TestOAuthConnection(t *testing.T) {
 		assertNoErr(t, rows.Scan(&authMethod))
 		assertEqual(t, authMethod, "OAuth")
 	}
+}
+
+func TestTOTPConnection(t *testing.T) {
+	ctx := context.Background()
+
+	testUser := "mfa_user"
+	testPassword := "pwd"
+
+	// Admin connection
+	adminConnStr := fmt.Sprintf(
+		"vertica://%s:%s@%s/?tlsmode=%s",
+		*verticaUserName, *verticaPassword, *verticaHostPort, *tlsMode,
+	)
+	adminDB, err := sql.Open("vertica", adminConnStr)
+	assert.NoError(t, err)
+	defer adminDB.Close()
+
+	// Step 1: Ensure the user is deleted if it already exists
+	_, err = adminDB.ExecContext(ctx, fmt.Sprintf("DROP USER IF EXISTS %s;", testUser))
+	assert.NoError(t, err)
+
+	// Step 2: Create MFA user with ENFORCEMFA authentication methods
+	createUserQueries := []string{
+		fmt.Sprintf("CREATE USER %s IDENTIFIED BY '%s';", testUser, testPassword),
+		fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE vsql TO %s;", testUser),
+		fmt.Sprintf("GRANT ALL ON SCHEMA public TO %s;", testUser),
+
+		// Unique names so they don't overlap with admin ones
+		"CREATE AUTHENTICATION pw_local_mfa METHOD 'password' LOCAL ENFORCEMFA;",
+		"CREATE AUTHENTICATION pw_ipv4_mfa METHOD 'password' HOST '0.0.0.0/0' ENFORCEMFA;",
+		"CREATE AUTHENTICATION pw_ipv6_mfa METHOD 'password' HOST '::/0' ENFORCEMFA;",
+
+		fmt.Sprintf("GRANT AUTHENTICATION pw_local_mfa TO %s;", testUser),
+		fmt.Sprintf("GRANT AUTHENTICATION pw_ipv4_mfa TO %s;", testUser),
+		fmt.Sprintf("GRANT AUTHENTICATION pw_ipv6_mfa TO %s;", testUser),
+	}
+
+	for _, q := range createUserQueries {
+		_, err = adminDB.ExecContext(ctx, q)
+		if err != nil {
+			t.Fatalf("Failed to execute query [%s]: %v", q, err)
+		}
+	}
+
+	// Clean-up: Delete the user after test execution
+	defer func() {
+		_, err := adminDB.ExecContext(ctx, fmt.Sprintf("DROP USER IF EXISTS %s;", testUser))
+		if err != nil {
+			t.Logf("Failed to clean up mfa_user: %v", err)
+		} else {
+			t.Logf("Successfully cleaned up mfa_user")
+		}
+	}()
+
+	// Step 3: Capture NOTICE (TOTP secret)
+	var totpSecret string
+	userConnStr := fmt.Sprintf(
+		"vertica://%s:%s@%s/?tlsmode=%s",
+		testUser, testPassword, *verticaHostPort, *tlsMode,
+	)
+	// Try to connect to capture the error (this should fail with MFA enrollment)
+	conn, err := sql.Open("vertica", userConnStr)
+	if err != nil {
+		t.Fatalf("Failed to open connection: %v", err)
+	}
+	defer conn.Close()
+
+	// Attempt to connect, expecting MFA error
+	err = conn.PingContext(ctx)
+	if err != nil {
+		// Updated regex: match text like:
+		// Your TOTP secret key is "YEUDLX65RD3S5FBW64IBM5W6E6GVWUVJ"
+		re := regexp.MustCompile(`(?i)TOTP secret key is\s+"([A-Z2-7=]+)"`)
+		match := re.FindStringSubmatch(err.Error())
+		if len(match) < 2 {
+			t.Fatalf("Failed to extract TOTP secret from error: %s", err.Error())
+		}
+
+		totpSecret = match[1]
+		t.Logf("Extracted TOTP secret: %s", totpSecret)
+	} else {
+		t.Fatalf("Expected MFA enrollment error was not thrown")
+	}
+
+	// Step 4: Generate valid TOTP
+	totpCode, err := totp.GenerateCode(totpSecret, time.Now())
+	assert.NoError(t, err)
+	fmt.Println("[TestSetup] Generated TOTP:", totpCode)
+
+	// ---------- Scenario 1: Valid TOTP in conn string ----------
+	t.Run("WithTOTPInConnStr", func(t *testing.T) {
+		connStr := fmt.Sprintf(
+			"vertica://%s:%s@%s/?tlsmode=%s&totp=%s",
+			testUser, testPassword, *verticaHostPort, *tlsMode, totpCode,
+		)
+
+		db, err := sql.Open("vertica", connStr)
+		assert.NoError(t, err)
+		defer db.Close()
+
+		err = db.PingContext(ctx)
+		assert.NoError(t, err)
+
+		rows, err := db.Query("SELECT version()")
+		assert.NoError(t, err)
+		defer rows.Close()
+
+		for rows.Next() {
+			var version string
+			_ = rows.Scan(&version)
+			fmt.Println("[ConnStr] Connected to Vertica Version:", version)
+		}
+	})
+
+	// ---------- Scenario 2: Valid TOTP via stdin ----------
+	t.Run("WithTOTPFromStdin", func(t *testing.T) {
+		originalStdin := os.Stdin
+		r, w, _ := os.Pipe()
+		_, _ = w.WriteString(totpCode + "\n")
+		_ = w.Close()
+		os.Stdin = r
+		defer func() { os.Stdin = originalStdin }()
+
+		connStr := fmt.Sprintf(
+			"vertica://%s:%s@%s/?tlsmode=%s",
+			testUser, testPassword, *verticaHostPort, *tlsMode,
+		)
+
+		db, err := sql.Open("vertica", connStr)
+		assert.NoError(t, err)
+		defer db.Close()
+
+		err = db.PingContext(ctx)
+		assert.NoError(t, err)
+	})
+
+	// ---------- Scenario 3: Invalid TOTP in conn string ----------
+	t.Run("InvalidTOTPConnStr", func(t *testing.T) {
+		invalidCode := "123456"
+		connStr := fmt.Sprintf(
+			"vertica://%s:%s@%s/?tlsmode=%s&totp=%s",
+			testUser, testPassword, *verticaHostPort, *tlsMode, invalidCode,
+		)
+
+		db, err := sql.Open("vertica", connStr)
+		assert.NoError(t, err)
+		defer db.Close()
+
+		err = db.PingContext(ctx)
+		assert.Error(t, err, "Expected failure with invalid TOTP but succeeded")
+	})
+
+	// ---------- Scenario 4: Invalid TOTP via stdin ----------
+	t.Run("InvalidTOTPFromStdin", func(t *testing.T) {
+		invalidCode := "123456"
+		originalStdin := os.Stdin
+		r, w, _ := os.Pipe()
+		_, _ = w.WriteString(invalidCode + "\n")
+		_ = w.Close()
+		os.Stdin = r
+		defer func() { os.Stdin = originalStdin }()
+
+		connStr := fmt.Sprintf(
+			"vertica://%s:%s@%s/?tlsmode=%s",
+			testUser, testPassword, *verticaHostPort, *tlsMode,
+		)
+
+		db, err := sql.Open("vertica", connStr)
+		assert.NoError(t, err)
+		defer db.Close()
+
+		err = db.PingContext(ctx)
+		assert.Error(t, err, "Expected failure with invalid stdin TOTP but succeeded")
+	})
 }
 
 func TestTLSConfiguration(t *testing.T) {
