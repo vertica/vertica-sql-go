@@ -199,8 +199,8 @@ func TestTOTPConnection(t *testing.T) {
 
 	// Admin connection
 	adminConnStr := fmt.Sprintf(
-		"vertica://%s@%s/?tlsmode=%s",
-		*verticaUserName, *verticaHostPort, *tlsMode,
+		"vertica://%s:%s@%s/?tlsmode=%s",
+		*verticaUserName, *verticaPassword, *verticaHostPort, *tlsMode,
 	)
 	adminDB, err := sql.Open("vertica", adminConnStr)
 	assert.NoError(t, err)
@@ -210,11 +210,27 @@ func TestTOTPConnection(t *testing.T) {
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf("DROP USER IF EXISTS %s;", testUser))
 	assert.NoError(t, err)
 
-	// Step 2: Create MFA user
-	_, err = adminDB.ExecContext(ctx,
-		fmt.Sprintf("CREATE USER %s IDENTIFIED BY '%s' ENFORCEMFA;", testUser, testPassword))
-	if err != nil {
-		t.Fatalf("Failed to create MFA user: %v", err)
+	// Step 2: Create MFA user with ENFORCEMFA authentication methods
+	createUserQueries := []string{
+		fmt.Sprintf("CREATE USER %s IDENTIFIED BY '%s';", testUser, testPassword),
+		fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE vsql TO %s;", testUser),
+		fmt.Sprintf("GRANT ALL ON SCHEMA public TO %s;", testUser),
+
+		// Unique names so they don't overlap with admin ones
+		"CREATE AUTHENTICATION pw_local_mfa METHOD 'password' LOCAL ENFORCEMFA;",
+		"CREATE AUTHENTICATION pw_ipv4_mfa METHOD 'password' HOST '0.0.0.0/0' ENFORCEMFA;",
+		"CREATE AUTHENTICATION pw_ipv6_mfa METHOD 'password' HOST '::/0' ENFORCEMFA;",
+
+		fmt.Sprintf("GRANT AUTHENTICATION pw_local_mfa TO %s;", testUser),
+		fmt.Sprintf("GRANT AUTHENTICATION pw_ipv4_mfa TO %s;", testUser),
+		fmt.Sprintf("GRANT AUTHENTICATION pw_ipv6_mfa TO %s;", testUser),
+	}
+
+	for _, q := range createUserQueries {
+		_, err = adminDB.ExecContext(ctx, q)
+		if err != nil {
+			t.Fatalf("Failed to execute query [%s]: %v", q, err)
+		}
 	}
 
 	// Clean-up: Delete the user after test execution
@@ -243,12 +259,14 @@ func TestTOTPConnection(t *testing.T) {
 	// Attempt to connect, expecting MFA error
 	err = conn.PingContext(ctx)
 	if err != nil {
-		// Check the error message for the TOTP secret
-		re := regexp.MustCompile(`"([A-Z0-9]{32})"`)
+		// Updated regex: match text like:
+		// Your TOTP secret key is "YEUDLX65RD3S5FBW64IBM5W6E6GVWUVJ"
+		re := regexp.MustCompile(`(?i)TOTP secret key is\s+"([A-Z2-7=]+)"`)
 		match := re.FindStringSubmatch(err.Error())
 		if len(match) < 2 {
 			t.Fatalf("Failed to extract TOTP secret from error: %s", err.Error())
 		}
+
 		totpSecret = match[1]
 		t.Logf("Extracted TOTP secret: %s", totpSecret)
 	} else {
@@ -1387,9 +1405,9 @@ func TestClientOSHostnameProperty(t *testing.T) {
 	}
 }
 
-var verticaUserName = flag.String("user", "release", "the user name to connect to Vertica")
-var verticaPassword = flag.String("password", "", "Vertica password for this user")
-var verticaHostPort = flag.String("locator", "10.20.80.132:5433", "Vertica's host and port")
+var verticaUserName = flag.String("user", "dbadmin", "the user name to connect to Vertica")
+var verticaPassword = flag.String("password", os.Getenv("VERTICA_TEST_PASSWORD"), "Vertica password for this user")
+var verticaHostPort = flag.String("locator", "localhost:5433", "Vertica's host and port")
 var tlsMode = flag.String("tlsmode", "none", "SSL/TLS mode (none, prefer, server, server-strict, custom)")
 var usePreparedStmts = flag.Bool("use_prepared_statements", true, "whether to use prepared statements for all queries/executes")
 var oauthAccessToken = flag.String("oauth_access_token", os.Getenv("VERTICA_TEST_OAUTH_ACCESS_TOKEN"), "the OAuth Access Token to connect to Vertica")
