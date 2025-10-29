@@ -766,7 +766,7 @@ func (v *connection) authSendTOTP() error {
 
 	var totpInput string
 	for i := 0; i < attempts; i++ {
-		fmt.Print("Enter your TOTP code: ")
+		fmt.Print("Enter TOTP: ")
 		input, err := reader.ReadString('\n')
 		if err != nil {
 			return fmt.Errorf("failed to read TOTP input: %v", err)
