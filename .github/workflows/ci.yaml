@@ -108,6 +108,8 @@ jobs:
           docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "CREATE KEY server_key TYPE 'RSA' AS '`cat ./resources/tests/ssl/server.key`';"
           docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "CREATE CERTIFICATE server AS '`cat ./resources/tests/ssl/server.crt`' KEY server_key;"
           docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "ALTER TLS CONFIGURATION server CERTIFICATE server TLSMODE 'ENABLE';"
+          docker exec -u dbadmin vertica_docker /opt/vertica/bin/vsql -c "ALTER DATABASE DEFAULT SET MinTLSVersion = 3;';"
+          
 
       - name: Testing with --tlsmode=server
         run: |
