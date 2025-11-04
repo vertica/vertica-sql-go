@@ -245,7 +245,14 @@ func newConnection(connString string) (*connection, error) {
 
 	// Read OAuth access token flag.
 	result.oauthaccesstoken = result.connURL.Query().Get("oauth_access_token")
-	result.totp = result.connURL.Query().Get("totp")
+
+	// Read TOTP (MFA) value. If provided, validate now so we fail fast before handshake.
+	if t := result.connURL.Query().Get("totp"); t != "" {
+		if err := validateTOTP(t); err != nil {
+			return nil, err
+		}
+		result.totp = t
+	}
 
 	// Read connection load balance flag.
 	loadBalanceFlag := result.connURL.Query().Get("connection_load_balance")
@@ -541,7 +548,6 @@ func (v *connection) defaultMessageHandler(bMsg msgs.BackEndMsg) (bool, error) {
 	handled := true
 
 	var err error = nil
-
 	switch msg := bMsg.(type) {
 	case *msgs.BEAuthenticationMsg:
 		switch msg.Response {
@@ -760,40 +766,44 @@ func (v *connection) authSendOAuthAccessToken() error {
 	return v.sendMessage(msg)
 }
 
+// validateTOTP ensures the TOTP string is a 1-6 digit numeric code.
+// Returns an error if blank, non-numeric, or longer than 6 digits.
+func validateTOTP(t string) error {
+	if t == "" {
+		return fmt.Errorf("Invalid TOTP: Cannot be empty")
+	}
+	if !regexp.MustCompile(`^\d+$`).MatchString(t) {
+		return fmt.Errorf("Invalid TOTP: contains non-numeric characters")
+	}
+	if len(t) > 6 {
+		return fmt.Errorf("Invalid TOTP: must be 6 digits")
+	}
+	return nil
+}
+
 func (v *connection) authSendTOTP() error {
+	// If TOTP already supplied via connection string, just validate (defensive) and send.
+	if v.totp != "" {
+		if err := validateTOTP(v.totp); err != nil { // Should already be valid, but double-check.
+			return err
+		}
+		msg := &msgs.FEPasswordMsg{PasswordData: v.totp}
+		return v.sendMessage(msg)
+	}
+
+	// Otherwise prompt user for a one-time TOTP.
 	reader := bufio.NewReader(os.Stdin)
-	attempts := 3
-
-	var totpInput string
-	for i := 0; i < attempts; i++ {
-		fmt.Print("Enter TOTP: ")
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			return fmt.Errorf("failed to read TOTP input: %v", err)
-		}
-		totpInput = strings.TrimSpace(input)
-
-		if totpInput == "" {
-			fmt.Println("TOTP is required and cannot be blank.")
-			continue
-		}
-
-		if !regexp.MustCompile(`^\d+$`).MatchString(totpInput) {
-			return fmt.Errorf("TOTP must contain digits only")
-		}
-
-		// Valid input
-		break
+	fmt.Print("Enter TOTP: ")
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("failed to read TOTP input: %v", err)
 	}
-
-	if totpInput == "" {
-		return fmt.Errorf("TOTP not provided after %d attempts", attempts)
+	t := strings.TrimSpace(input)
+	if err := validateTOTP(t); err != nil {
+		return err
 	}
-
-	v.totp = totpInput
-	msg := &msgs.FEPasswordMsg{
-		PasswordData: v.totp,
-	}
+	v.totp = t
+	msg := &msgs.FEPasswordMsg{PasswordData: v.totp}
 	return v.sendMessage(msg)
 }
 

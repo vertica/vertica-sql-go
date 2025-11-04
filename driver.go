@@ -56,9 +56,7 @@ var driverLogger = logger.New("driver")
 // user:pass@host:port/database
 func (d *Driver) Open(connString string) (driver.Conn, error) {
 	conn, err := newConnection(connString)
-	if err != nil {
-		driverLogger.Error(err.Error())
-	}
+	// Do not log here; let caller/application decide how to surface connection errors.
 	return conn, err
 }
 

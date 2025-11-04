@@ -206,9 +206,19 @@ func TestTOTPConnection(t *testing.T) {
 	assert.NoError(t, err)
 	defer adminDB.Close()
 
-	// Step 1: Ensure the user is deleted if it already exists
-	_, err = adminDB.ExecContext(ctx, fmt.Sprintf("DROP USER IF EXISTS %s;", testUser))
-	assert.NoError(t, err)
+	// Step 1: Ensure prior test artifacts are removed (user + authentications) before creating.
+	preCleanupQueries := []string{
+		fmt.Sprintf("DROP USER IF EXISTS %s;", testUser),
+		"DROP AUTHENTICATION pw_local_mfa CASCADE;",
+		"DROP AUTHENTICATION pw_ipv4_mfa CASCADE;",
+		"DROP AUTHENTICATION pw_ipv6_mfa CASCADE;",
+	}
+	for _, q := range preCleanupQueries {
+		if _, err = adminDB.ExecContext(ctx, q); err != nil {
+			// Non-fatal: object may not exist. Log for visibility.
+			 t.Logf("Pre-cleanup (ignore if harmless) failed for [%s]: %v", q, err)
+		}
+	}
 
 	// Step 2: Create MFA user with ENFORCEMFA authentication methods
 	createUserQueries := []string{
@@ -233,13 +243,21 @@ func TestTOTPConnection(t *testing.T) {
 		}
 	}
 
-	// Clean-up: Delete the user after test execution
+	// Clean-up: Delete the user and authentication objects after test execution
 	defer func() {
-		_, err := adminDB.ExecContext(ctx, fmt.Sprintf("DROP USER IF EXISTS %s;", testUser))
-		if err != nil {
-			t.Logf("Failed to clean up mfa_user: %v", err)
-		} else {
-			t.Logf("Successfully cleaned up mfa_user")
+		cleanupQueries := []string{
+			fmt.Sprintf("DROP USER IF EXISTS %s;", testUser),
+			"DROP AUTHENTICATION pw_local_mfa CASCADE;",
+			"DROP AUTHENTICATION pw_ipv4_mfa CASCADE;",
+			"DROP AUTHENTICATION pw_ipv6_mfa CASCADE;",
+		}
+		for _, q := range cleanupQueries {
+			if _, err := adminDB.ExecContext(ctx, q); err != nil {
+				// Log but continue attempting remaining cleanup items
+				t.Logf("Cleanup failed for query [%s]: %v", q, err)
+			} else {
+				t.Logf("Cleanup succeeded for query [%s]", q)
+			}
 		}
 	}()
 
@@ -362,6 +380,106 @@ func TestTOTPConnection(t *testing.T) {
 
 		err = db.PingContext(ctx)
 		assert.Error(t, err, "Expected failure with invalid stdin TOTP but succeeded")
+	})
+
+	// ---------- Scenario 5: Blank TOTP in conn string ----------
+	t.Run("BlankTOTPConnStr", func(t *testing.T) {
+		connStr := fmt.Sprintf(
+			"vertica://%s:%s@%s/?tlsmode=%s&totp=",
+			testUser, testPassword, *verticaHostPort, *tlsMode,
+		)
+		db, err := sql.Open("vertica", connStr)
+		assert.NoError(t, err)
+		defer db.Close()
+		err = db.PingContext(ctx)
+		assert.Error(t, err, "Expected failure with blank TOTP but succeeded")
+	})
+
+	// ---------- Scenario 6: Blank TOTP via stdin ----------
+	t.Run("BlankTOTPFromStdin", func(t *testing.T) {
+		originalStdin := os.Stdin
+		r, w, _ := os.Pipe()
+		_, _ = w.WriteString("\n") // blank line
+		_ = w.Close()
+		os.Stdin = r
+		defer func() { os.Stdin = originalStdin }()
+		connStr := fmt.Sprintf(
+			"vertica://%s:%s@%s/?tlsmode=%s",
+			testUser, testPassword, *verticaHostPort, *tlsMode,
+		)
+		db, err := sql.Open("vertica", connStr)
+		assert.NoError(t, err)
+		defer db.Close()
+		err = db.PingContext(ctx)
+		assert.Error(t, err, "Expected failure with blank stdin TOTP but succeeded")
+	})
+
+	// ---------- Scenario 7: Long (>6 digits) TOTP in conn string ----------
+	t.Run("LongTOTPConnStr", func(t *testing.T) {
+		longCode := "1234567" // 7 digits
+		connStr := fmt.Sprintf(
+			"vertica://%s:%s@%s/?tlsmode=%s&totp=%s",
+			testUser, testPassword, *verticaHostPort, *tlsMode, longCode,
+		)
+		db, err := sql.Open("vertica", connStr)
+		assert.NoError(t, err)
+		defer db.Close()
+		err = db.PingContext(ctx)
+		assert.Error(t, err, "Expected failure with long TOTP but succeeded")
+	})
+
+	// ---------- Scenario 8: Long (>6 digits) TOTP via stdin ----------
+	t.Run("LongTOTPFromStdin", func(t *testing.T) {
+		longCode := "1234567"
+		originalStdin := os.Stdin
+		r, w, _ := os.Pipe()
+		_, _ = w.WriteString(longCode + "\n")
+		_ = w.Close()
+		os.Stdin = r
+		defer func() { os.Stdin = originalStdin }()
+		connStr := fmt.Sprintf(
+			"vertica://%s:%s@%s/?tlsmode=%s",
+			testUser, testPassword, *verticaHostPort, *tlsMode,
+		)
+		db, err := sql.Open("vertica", connStr)
+		assert.NoError(t, err)
+		defer db.Close()
+		err = db.PingContext(ctx)
+		assert.Error(t, err, "Expected failure with long stdin TOTP but succeeded")
+	})
+
+	// ---------- Scenario 9: Alphanumeric TOTP in conn string ----------
+	t.Run("AlphaTOTPConnStr", func(t *testing.T) {
+		alphaCode := "12AB34"
+		connStr := fmt.Sprintf(
+			"vertica://%s:%s@%s/?tlsmode=%s&totp=%s",
+			testUser, testPassword, *verticaHostPort, *tlsMode, alphaCode,
+		)
+		db, err := sql.Open("vertica", connStr)
+		assert.NoError(t, err)
+		defer db.Close()
+		err = db.PingContext(ctx)
+		assert.Error(t, err, "Expected failure with alphanumeric TOTP but succeeded")
+	})
+
+	// ---------- Scenario 10: Alphanumeric TOTP via stdin ----------
+	t.Run("AlphaTOTPFromStdin", func(t *testing.T) {
+		alphaCode := "12AB34"
+		originalStdin := os.Stdin
+		r, w, _ := os.Pipe()
+		_, _ = w.WriteString(alphaCode + "\n")
+		_ = w.Close()
+		os.Stdin = r
+		defer func() { os.Stdin = originalStdin }()
+		connStr := fmt.Sprintf(
+			"vertica://%s:%s@%s/?tlsmode=%s",
+			testUser, testPassword, *verticaHostPort, *tlsMode,
+		)
+		db, err := sql.Open("vertica", connStr)
+		assert.NoError(t, err)
+		defer db.Close()
+		err = db.PingContext(ctx)
+		assert.Error(t, err, "Expected failure with alphanumeric stdin TOTP but succeeded")
 	})
 }
 
