@@ -296,7 +296,7 @@ jobs:
             [ -n "$addrs" ] && break || sleep ${INTERVAL}
           done
 
-          kubectl -n ${NS} run go-test-runner --image=golang:1.20 --restart=Never -- sleep infinity
+          kubectl -n ${NS} run go-test-runner --image=golang:${{ matrix.go-version }} --restart=Never -- sleep infinity
           kubectl -n ${NS} wait --for=condition=Ready pod/go-test-runner --timeout=120s
 
           kubectl -n ${NS} exec -i go-test-runner -- mkdir -p /workspace
