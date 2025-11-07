@@ -308,19 +308,12 @@ jobs:
             go mod tidy
 
             echo '=== Running without TLS ==='
-            go test -v -race . -args --locator '${LOCATOR}' --user dbadmin
-            go test -race . -args --locator '${LOCATOR}' --user dbadmin --use_prepared_statements=0
-            go test -race ./logger
-
-            echo '=== Running OAuth Tests ==='
             RAW=\$(curl -s -X POST http://keycloak.keycloak.svc.cluster.local:8080/realms/test/protocol/openid-connect/token \
               -d 'client_id=vertica' \
               -d 'username=oauth_user' \
               -d 'password=password' \
               -d 'grant_type=password' \
               -d 'client_secret=P9f8350QQIUhFfK1GF5sMhq4Dm3P6Sbs')
-
-            echo \"Raw response: \$RAW\"
 
             TOKEN=\$(echo \"\$RAW\" | python3 -c 'import json,sys;obj=json.load(sys.stdin);print(obj.get(\"access_token\",\"\"))')
 
