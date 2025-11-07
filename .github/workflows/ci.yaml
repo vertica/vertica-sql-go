@@ -330,7 +330,7 @@ jobs:
           "
 
       # Ebabling TLS & TLS Tests (server Mode)
-      - name: TLS tests with Server mode
+      - name: Run TLS tests with Server mode
         run: |
           NS=my-verticadb-operator
           POD=verticadb-sample-defaultsubcluster-0
@@ -343,6 +343,11 @@ jobs:
               ALTER TLS CONFIGURATION server CERTIFICATE server TLSMODE 'ENABLE';
             \"
           "
+          # Enabling TLS Mutual Mode
+          kubectl -n ${NS} exec ${POD} -c server -- \
+            /opt/vertica/bin/vsql -U dbadmin -c \
+            "ALTER TLS CONFIGURATION server ADD CA CERTIFICATES root_ca TLSMODE 'VERIFY_CA';"
+            
           echo '=== Running TLS Tests (server mode) ==='
           kubectl -n ${NS} exec -i go-test-runner -- bash -c "
             cd /workspace
@@ -356,11 +361,6 @@ jobs:
           NS=my-verticadb-operator
           POD=verticadb-sample-defaultsubcluster-0
           LOCATOR="verticadb-sample-defaultsubcluster.${NS}.svc.cluster.local:5433"
-
-          # Enabling TLS Mutual Mode
-          kubectl -n ${NS} exec ${POD} -c server -- \
-            /opt/vertica/bin/vsql -U dbadmin -c \
-            "ALTER TLS CONFIGURATION server ADD CA CERTIFICATES root_ca TLSMODE 'VERIFY_CA';"
             
             kubectl -n ${NS} exec -i go-test-runner -- bash -c "
             cd /workspace
