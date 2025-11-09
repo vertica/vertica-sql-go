@@ -56,7 +56,8 @@ import (
 )
 
 var (
-	connectionLogger = logger.New("connection")
+	connectionLogger    = logger.New("connection")
+	asciiTotpRegex      = regexp.MustCompile(`^[0-9]{6}$`) // precompiled: exactly 6 ASCII digits
 )
 
 const (
@@ -769,13 +770,18 @@ func (v *connection) authSendOAuthAccessToken() error {
 // validateTOTP ensures the TOTP string is a 1-6 digit numeric code.
 // Returns an error if blank, non-numeric, or longer than 6 digits.
 func validateTOTP(t string) error {
-	if t == "" {
-		return fmt.Errorf("Invalid TOTP: Cannot be empty")
-	}
-	if !regexp.MustCompile(`^\d+$`).MatchString(t) {
-		return fmt.Errorf("Invalid TOTP: contains non-numeric characters")
-	}
-	if len(t) > 6 {
+	// Enforce exactly six ASCII digits. Avoid \d which matches Unicode digits.
+	if !asciiTotpRegex.MatchString(t) {
+		if t == "" {
+			return fmt.Errorf("Invalid TOTP: cannot be empty")
+		}
+		// Provide more granular feedback for common cases.
+		for _, ch := range t {
+			if ch < '0' || ch > '9' { // Non-ASCII digit
+				return fmt.Errorf("Invalid TOTP: contains non-numeric characters")
+			}
+		}
+		// All chars are digits but length wrong
 		return fmt.Errorf("Invalid TOTP: must be 6 digits")
 	}
 	return nil
