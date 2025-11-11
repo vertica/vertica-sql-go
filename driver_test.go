@@ -1574,6 +1574,89 @@ func getTlsConfig() (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
+func TestEmailParseStatement(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+
+	userName := "testuser@vertica.com"
+	role := "Vertica Database Admin"
+
+	dropRole := fmt.Sprintf("DROP ROLE IF EXISTS  \"%s\" CASCADE", role)
+	createRole := fmt.Sprintf("CREATE ROLE  \"%s\"", role)
+	dropUser := fmt.Sprintf("DROP USER IF EXISTS  \"%s\"", userName)
+	createUser := fmt.Sprintf("CREATE USER \"%s\"", userName)
+	grantRole := fmt.Sprintf("Grant \"%s\" to \"%s\"", role, userName)
+	selectUser := fmt.Sprintf("SELECT user_name,all_roles FROM USERS WHERE user_name='%s'", userName)
+
+	_, err := connDB.QueryContext(ctx, dropRole)
+	assertNoErr(t, err)
+
+	_, err = connDB.QueryContext(ctx, createRole)
+	assertNoErr(t, err)
+
+	_, err = connDB.QueryContext(ctx, dropUser)
+	assertNoErr(t, err)
+
+	_, err = connDB.QueryContext(ctx, createUser)
+	assertNoErr(t, err)
+
+	_, err = connDB.QueryContext(ctx, grantRole)
+	assertNoErr(t, err)
+
+	rows, err := connDB.QueryContext(ctx, selectUser)
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	var user_name string
+	var all_roles string
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&user_name, &all_roles))
+		assertEqual(t, user_name, userName)
+		assertEqual(t, all_roles, role)
+	}
+}
+
+func TestInvalidEmailParseStatement(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+
+	userName := "testuser$vertica$.com"
+	role := "Vertica Database Admin"
+
+	dropRole := fmt.Sprintf("DROP ROLE IF EXISTS  \"%s\" CASCADE", role)
+	createRole := fmt.Sprintf("CREATE ROLE  \"%s\"", role)
+	dropUser := fmt.Sprintf("DROP USER IF EXISTS  \"%s\"", userName)
+	createUser := fmt.Sprintf("CREATE USER \"%s\"", userName)
+	grantRole := fmt.Sprintf("Grant \"%s\" to \"%s\"", role, userName)
+	selectUser := fmt.Sprintf("SELECT user_name,all_roles FROM USERS WHERE user_name='%s'", userName)
+
+	_, err := connDB.QueryContext(ctx, dropRole)
+	assertNoErr(t, err)
+
+	_, err = connDB.QueryContext(ctx, createRole)
+	assertNoErr(t, err)
+
+	_, err = connDB.QueryContext(ctx, dropUser)
+	assertNoErr(t, err)
+
+	_, err = connDB.QueryContext(ctx, createUser)
+	assertNoErr(t, err)
+
+	_, err = connDB.QueryContext(ctx, grantRole)
+	assertNoErr(t, err)
+
+	rows, err := connDB.QueryContext(ctx, selectUser)
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	var user_name string
+	var all_roles string
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&user_name, &all_roles))
+		assertEqual(t, user_name, userName)
+		assertEqual(t, all_roles, role)
+	}
+}
 func init() {
 	// One or both lines below are necessary depending on your go version
 	testing.Init()
