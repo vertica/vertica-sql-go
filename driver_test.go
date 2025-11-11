@@ -223,7 +223,7 @@ func TestTOTPConnection(t *testing.T) {
 	// Step 2: Create MFA user with ENFORCEMFA authentication methods
 	createUserQueries := []string{
 		fmt.Sprintf("CREATE USER %s IDENTIFIED BY '%s';", testUser, testPassword),
-		fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE vsql TO %s;", testUser),
+		fmt.Sprintf("GRANT ALL PRIVILEGES ON DATABASE vdb TO %s;", testUser),
 		fmt.Sprintf("GRANT ALL ON SCHEMA public TO %s;", testUser),
 
 		// Unique names so they don't overlap with admin ones
