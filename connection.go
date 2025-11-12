@@ -33,6 +33,7 @@ package vertigo
 // THE SOFTWARE.
 
 import (
+	"bufio"
 	"context"
 	"crypto/md5"
 	"crypto/sha512"
@@ -44,6 +45,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -54,7 +56,8 @@ import (
 )
 
 var (
-	connectionLogger = logger.New("connection")
+	connectionLogger    = logger.New("connection")
+	asciiTotpRegex      = regexp.MustCompile(`^[0-9]{6}$`) // precompiled: exactly 6 ASCII digits
 )
 
 const (
@@ -115,6 +118,8 @@ type connection struct {
 	dead             bool // used if a ROLLBACK severity error is encountered
 	sessMutex        sync.Mutex
 	workload         string
+	totp             string
+	lastNotice       string
 }
 
 // Begin - Begin starts and returns a new transaction. (DEPRECATED)
@@ -241,6 +246,14 @@ func newConnection(connString string) (*connection, error) {
 
 	// Read OAuth access token flag.
 	result.oauthaccesstoken = result.connURL.Query().Get("oauth_access_token")
+
+	// Read TOTP (MFA) value. If provided, validate now so we fail fast before handshake.
+	if t := result.connURL.Query().Get("totp"); t != "" {
+		if err := validateTOTP(t); err != nil {
+			return nil, err
+		}
+		result.totp = t
+	}
 
 	// Read connection load balance flag.
 	loadBalanceFlag := result.connURL.Query().Get("connection_load_balance")
@@ -450,6 +463,7 @@ func (v *connection) handshake() error {
 		Autocommit:       v.autocommit,
 		OAuthAccessToken: v.oauthaccesstoken,
 		Workload:         v.workload,
+		Totp:             v.totp,
 	}
 
 	if err := v.sendMessage(msg); err != nil {
@@ -535,7 +549,6 @@ func (v *connection) defaultMessageHandler(bMsg msgs.BackEndMsg) (bool, error) {
 	handled := true
 
 	var err error = nil
-
 	switch msg := bMsg.(type) {
 	case *msgs.BEAuthenticationMsg:
 		switch msg.Response {
@@ -549,12 +562,16 @@ func (v *connection) defaultMessageHandler(bMsg msgs.BackEndMsg) (bool, error) {
 			err = v.authSendSHA512Password(msg.ExtraAuthData)
 		case common.AuthenticationOAuth:
 			err = v.authSendOAuthAccessToken()
+		case common.AuthenticationTOTP:
+			err = v.authSendTOTP()
 		default:
 			handled = false
 			err = fmt.Errorf("unsupported authentication scheme: %d", msg.Response)
 		}
 	case *msgs.BENoticeMsg:
-		break
+		// Capture NOTICE text so tests (like MFA secret retrieval) can parse it
+		v.lastNotice = msg.Message
+		connectionLogger.Info("NOTICE: %s", msg.Message)
 	case *msgs.BEParamStatusMsg:
 		connectionLogger.Debug("%v", msg)
 	default:
@@ -750,6 +767,52 @@ func (v *connection) authSendOAuthAccessToken() error {
 	return v.sendMessage(msg)
 }
 
+// validateTOTP ensures the TOTP string is a 1-6 digit numeric code.
+// Returns an error if blank, non-numeric, or longer than 6 digits.
+func validateTOTP(t string) error {
+	// Enforce exactly six ASCII digits. Avoid \d which matches Unicode digits.
+	if !asciiTotpRegex.MatchString(t) {
+		if t == "" {
+			return fmt.Errorf("Invalid TOTP: cannot be empty")
+		}
+		// Provide more granular feedback for common cases.
+		for _, ch := range t {
+			if ch < '0' || ch > '9' { // Non-ASCII digit
+				return fmt.Errorf("Invalid TOTP: contains non-numeric characters")
+			}
+		}
+		// All chars are digits but length wrong
+		return fmt.Errorf("Invalid TOTP: must be 6 digits")
+	}
+	return nil
+}
+
+func (v *connection) authSendTOTP() error {
+	// If TOTP already supplied via connection string, just validate (defensive) and send.
+	if v.totp != "" {
+		if err := validateTOTP(v.totp); err != nil { // Should already be valid, but double-check.
+			return err
+		}
+		msg := &msgs.FEPasswordMsg{PasswordData: v.totp}
+		return v.sendMessage(msg)
+	}
+
+	// Otherwise prompt user for a one-time TOTP.
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter TOTP: ")
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("failed to read TOTP input: %v", err)
+	}
+	t := strings.TrimSpace(input)
+	if err := validateTOTP(t); err != nil {
+		return err
+	}
+	v.totp = t
+	msg := &msgs.FEPasswordMsg{PasswordData: v.totp}
+	return v.sendMessage(msg)
+}
+
 func (v *connection) sync() error {
 	err := v.sendMessage(&msgs.FESyncMsg{})
 
@@ -773,6 +836,10 @@ func (v *connection) sync() error {
 	}
 
 	return nil
+}
+
+func (v *connection) LastNotice() string {
+    return v.lastNotice
 }
 
 func (v *connection) lockSessionMutex() {
