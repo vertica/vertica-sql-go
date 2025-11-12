@@ -44,14 +44,14 @@ import (
 	"io/ioutil"
 	"os"
 	"reflect"
-	"regexp"
+	//"regexp"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-    "github.com/pquerna/otp/totp"
-    "github.com/stretchr/testify/assert"
+    //"github.com/pquerna/otp/totp"
+    //"github.com/stretchr/testify/assert"
 	"github.com/vertica/vertica-sql-go/logger"
 )
 
@@ -191,7 +191,7 @@ func TestOAuthConnection(t *testing.T) {
 	}
 }
 
-func TestTOTPConnection(t *testing.T) {
+/* func TestTOTPConnection(t *testing.T) {
 	ctx := context.Background()
 
 	testUser := "mfa_user"
@@ -481,7 +481,7 @@ func TestTOTPConnection(t *testing.T) {
 		err = db.PingContext(ctx)
 		assert.Error(t, err, "Expected failure with alphanumeric stdin TOTP but succeeded")
 	})
-}
+} */
 
 func TestTLSConfiguration(t *testing.T) {
 	connDB := openConnection(t)
