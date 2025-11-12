@@ -225,7 +225,7 @@ jobs:
         run: |
           kubectl -n keycloak rollout status deploy/keycloak --timeout=2m
           kubectl -n keycloak get pods -o wide
-          
+
       # Configure Keycloak realm, client, and user
       - name: Configure Keycloak realm, client, and user
         run: |
