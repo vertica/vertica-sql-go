@@ -43,6 +43,19 @@ func testStatement(command string) *stmt {
 	return stmt
 }
 
+func TestNewStmtAllowsEmptyCommand(t *testing.T) {
+	stmt, err := newStmt(nil, "")
+	if err != nil {
+		t.Fatalf("expected no error, received %v", err)
+	}
+	if stmt == nil {
+		t.Fatalf("expected stmt instance for empty command")
+	}
+	if stmt.command != "" {
+		t.Errorf("expected command to remain empty, got %q", stmt.command)
+	}
+}
+
 func TestInterpolate(t *testing.T) {
 	var testCases = []struct {
 		name     string
@@ -247,5 +260,21 @@ func TestNumInput(t *testing.T) {
 				t.Errorf("Expected %d query inputs, got %d", tc.expected, result)
 			}
 		})
+	}
+}
+
+func TestMergeRowSets(t *testing.T) {
+	single := newEmptyRows()
+	multiA := newEmptyRows()
+	multiB := newEmptyRows()
+
+	result := mergeRowSets([]*rows{single})
+	if result != single {
+		t.Fatalf("expected single rows instance to be returned")
+	}
+
+	multiResult := mergeRowSets([]*rows{multiA, multiB})
+	if _, ok := multiResult.(*multiRows); !ok {
+		t.Fatalf("expected multiRows instance when more than one result set is provided")
 	}
 }

@@ -875,17 +875,20 @@ func TestTimestampParsers(t *testing.T) {
 	assertEqual(t, fmt.Sprintf("%s", val)[0:33], "-2018-01-27 21:09:44.843913 -0400")
 }
 
-func TestEmptyStatementError(t *testing.T) {
+func TestEmptyStatementNoOp(t *testing.T) {
 	connDB := openConnection(t)
 	defer closeConnection(t, connDB)
 
-	// Try as exec.
 	_, err := connDB.ExecContext(ctx, "")
-	assertErr(t, err, "empty statement")
+	assertNoErr(t, err)
 
-	// Try as query.
-	_, err = connDB.QueryContext(ctx, "")
-	assertErr(t, err, "empty statement")
+	rows, err := connDB.QueryContext(ctx, "")
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	hasRow := rows.Next()
+	assertEqual(t, hasRow, false)
+	assertNoErr(t, rows.Err())
 }
 
 func TestValueTypes(t *testing.T) {

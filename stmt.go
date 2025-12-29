@@ -75,28 +75,30 @@ type stmt struct {
 	lastRowDesc  *msgs.BERowDescMsg
 	// set if Vertica issues an error of ROLLBACK severity
 	rolledBack bool
+	multiStatements bool
 }
 
+
 func newStmt(connection *connection, command string) (*stmt, error) {
-
-	if len(command) == 0 {
-		return nil, fmt.Errorf("cannot create an empty statement")
-	}
-
 	s := &stmt{
 		conn:         connection,
+		command:      command,
 		preparedName: fmt.Sprintf("S%d%d%d", os.Getpid(), time.Now().Unix(), rand.Int31()),
 		parseState:   parseStateUnparsed,
 	}
-	if emailRegexPattern.MatchString(command) {
-		s.command = command
-	} else {
-		argCounter := func() string {
-			s.posArgCnt++
-			return "?"
-		}
-		s.command = parse.Lex(command, parse.WithNamedCallback(s.pushNamed), parse.WithPositionalSubstitution(argCounter))
+
+	s.multiStatements = len(parse.SplitStatements(command)) > 1
+
+	if len(command) == 0 || emailRegexPattern.MatchString(command) {
+		return s, nil
 	}
+
+	argCounter := func() string {
+		s.posArgCnt++
+		return "?"
+	}
+	s.command = parse.Lex(command, parse.WithNamedCallback(s.pushNamed), parse.WithPositionalSubstitution(argCounter))
+	s.multiStatements = len(parse.SplitStatements(s.command)) > 1
 	return s, nil
 }
 
@@ -236,16 +238,16 @@ func (s *stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driv
 }
 
 // QueryContext docs
-func (s *stmt) QueryContextRaw(ctx context.Context, baseArgs []driver.NamedValue) (*rows, error) {
+func (s *stmt) QueryContextRaw(ctx context.Context, baseArgs []driver.NamedValue) (driver.Rows, error) {
 	stmtLogger.Debug("stmt.QueryContextRaw(): %s", s.command)
-
-	var cmd string
-	var err error
-	var portalName string
 
 	args, err := s.injectNamedArgs(baseArgs)
 	if err != nil {
 		return newEmptyRows(), err
+	}
+
+	if len(strings.TrimSpace(s.command)) == 0 {
+		return newEmptyRows(), nil
 	}
 
 	doneChan := make(chan bool, 1)
@@ -278,61 +280,33 @@ func (s *stmt) QueryContextRaw(ctx context.Context, baseArgs []driver.NamedValue
 		doneChan <- true
 	}()
 
-	// If we have a prepared statement, go through bind/execute() phases instead.
 	if s.parseState == parseStateParsed {
-		if err = s.bindAndExecute(portalName, args); err != nil {
+		if err = s.bindAndExecute("", args); err != nil {
 			return newEmptyRows(), err
 		}
-
 		return s.collectResults(ctx)
 	}
 
-	rows := newEmptyRows()
-
-	// We aren't a prepared statement, manually interpolate and do as a simple query.
-	cmd, err = s.interpolate(args)
-
+	interpolated, err := s.interpolate(args)
 	if err != nil {
-		return rows, err
+		return newEmptyRows(), err
 	}
 
-	if err = s.conn.sendMessage(&msgs.FEQueryMsg{Query: cmd}); err != nil {
-		return rows, err
+	statements := parse.SplitStatements(interpolated)
+	if len(statements) == 0 {
+		return newEmptyRows(), nil
 	}
 
-	for {
-		bMsg, err := s.conn.recvMessage()
-
-		if err != nil {
-			return newEmptyRows(), err
+	resultSets := make([]*rows, 0, len(statements))
+	for _, statementSQL := range statements {
+		resultSet, runErr := s.runSimpleStatement(ctx, statementSQL)
+		if runErr != nil {
+			return newEmptyRows(), runErr
 		}
-
-		switch msg := bMsg.(type) {
-		case *msgs.BEDataRowMsg:
-			err = rows.addRow(msg)
-			if err != nil {
-				return rows, err
-			}
-		case *msgs.BERowDescMsg:
-			rows = newRows(ctx, msg, s.conn.serverTZOffset)
-		case *msgs.BECmdCompleteMsg:
-			break
-		case *msgs.BEErrorMsg:
-			return newEmptyRows(), s.evaluateErrorMsg(msg)
-		case *msgs.BEEmptyQueryResponseMsg:
-			return newEmptyRows(), nil
-		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg:
-			err = rows.finalize()
-			if err != nil {
-				return rows, err
-			}
-			return rows, ctx.Err()
-		case *msgs.BEInitSTDINLoadMsg:
-			s.copySTDIN(ctx)
-		default:
-			s.conn.defaultMessageHandler(bMsg)
-		}
+		resultSets = append(resultSets, resultSet)
 	}
+
+	return mergeRowSets(resultSets), nil
 }
 
 func (s *stmt) copySTDIN(ctx context.Context) {
@@ -361,6 +335,73 @@ func (s *stmt) copySTDIN(ctx context.Context) {
 		s.conn.sendMessage(&msgs.FELoadDataMsg{Data: block, UsedBytes: bytesRead})
 	}
 	s.conn.sendMessage(&msgs.FEFlushMsg{})
+}
+
+func (s *stmt) runSimpleStatement(ctx context.Context, sql string) (*rows, error) {
+	statement := strings.TrimSpace(sql)
+	if len(statement) == 0 {
+		return newEmptyRows(), nil
+	}
+
+	result := newEmptyRows()
+
+	if err := s.conn.sendMessage(&msgs.FEQueryMsg{Query: statement}); err != nil {
+		return result, err
+	}
+
+	for {
+		bMsg, err := s.conn.recvMessage()
+		if err != nil {
+			return newEmptyRows(), err
+		}
+
+		switch msg := bMsg.(type) {
+		case *msgs.BEDataRowMsg:
+			if err = result.addRow(msg); err != nil {
+				return result, err
+			}
+		case *msgs.BERowDescMsg:
+			result = newRows(ctx, msg, s.conn.serverTZOffset)
+		case *msgs.BECmdDescriptionMsg:
+			continue
+		case *msgs.BECmdCompleteMsg:
+			continue
+		case *msgs.BEErrorMsg:
+			return newEmptyRows(), s.evaluateErrorMsg(msg)
+		case *msgs.BEEmptyQueryResponseMsg:
+			return newEmptyRows(), nil
+		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg:
+			if err = result.finalize(); err != nil {
+				return result, err
+			}
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return result, ctxErr
+			}
+			return result, nil
+		case *msgs.BEInitSTDINLoadMsg:
+			s.copySTDIN(ctx)
+		default:
+			s.conn.defaultMessageHandler(bMsg)
+		}
+	}
+}
+
+func mergeRowSets(sets []*rows) driver.Rows {
+	filtered := make([]*rows, 0, len(sets))
+	for _, set := range sets {
+		if set != nil {
+			filtered = append(filtered, set)
+		}
+	}
+
+	switch len(filtered) {
+	case 0:
+		return newEmptyRows()
+	case 1:
+		return filtered[0]
+	default:
+		return &multiRows{sets: filtered}
+	}
 }
 
 func (s *stmt) cleanQuotes(val string) string {
@@ -440,6 +481,10 @@ func (s *stmt) evaluateErrorMsg(msg *msgs.BEErrorMsg) error {
 }
 
 func (s *stmt) prepareAndDescribe() error {
+	if len(strings.TrimSpace(s.command)) == 0 {
+		s.parseState = parseStateUnparsed
+		return nil
+	}
 
 	parseMsg := &msgs.FEParseMsg{
 		PreparedName: s.preparedName,
