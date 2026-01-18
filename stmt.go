@@ -74,7 +74,7 @@ type stmt struct {
 	paramTypes   []common.ParameterType
 	lastRowDesc  *msgs.BERowDescMsg
 	// set if Vertica issues an error of ROLLBACK severity
-	rolledBack bool
+	rolledBack      bool
 	multiStatements bool
 }
 
@@ -87,7 +87,12 @@ func newStmt(connection *connection, command string) (*stmt, error) {
 		parseState:   parseStateUnparsed,
 	}
 
-	s.multiStatements = len(parse.SplitStatements(command)) > 1
+	initialStatements := parse.SplitStatements(command)
+	if len(initialStatements) == 0 {
+		s.command = ""
+		return s, nil
+	}
+	s.multiStatements = len(initialStatements) > 1
 
 	if len(command) == 0 || emailRegexPattern.MatchString(command) {
 		return s, nil
@@ -98,7 +103,13 @@ func newStmt(connection *connection, command string) (*stmt, error) {
 		return "?"
 	}
 	s.command = parse.Lex(command, parse.WithNamedCallback(s.pushNamed), parse.WithPositionalSubstitution(argCounter))
-	s.multiStatements = len(parse.SplitStatements(s.command)) > 1
+	finalStatements := parse.SplitStatements(s.command)
+	if len(finalStatements) == 0 {
+		s.command = ""
+		s.multiStatements = false
+	} else {
+		s.multiStatements = len(finalStatements) > 1
+	}
 	return s, nil
 }
 
@@ -364,7 +375,7 @@ func (s *stmt) runSimpleStatement(ctx context.Context, sql string) (*rows, error
 			result = newRows(ctx, msg, s.conn.serverTZOffset)
 		case *msgs.BECmdDescriptionMsg:
 			continue
-		case *msgs.BECmdCompleteMsg:
+		case *msgs.BECmdCompleteMsg, *msgs.BEParseCompleteMsg:
 			continue
 		case *msgs.BEErrorMsg:
 			return newEmptyRows(), s.evaluateErrorMsg(msg)

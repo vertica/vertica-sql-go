@@ -33,9 +33,15 @@ package vertigo
 // THE SOFTWARE.
 
 import (
+	"bytes"
 	"database/sql/driver"
+	"encoding/binary"
+	"io"
 	"testing"
 	"time"
+
+	"github.com/vertica/vertica-sql-go/common"
+	"github.com/vertica/vertica-sql-go/msgs"
 )
 
 func testStatement(command string) *stmt {
@@ -278,3 +284,184 @@ func TestMergeRowSets(t *testing.T) {
 		t.Fatalf("expected multiRows instance when more than one result set is provided")
 	}
 }
+
+func TestMergeRowSetsEmptyInputReturnsEmptyRows(t *testing.T) {
+	testCases := []struct {
+		name string
+		sets []*rows
+	}{
+		{name: "nil slice", sets: nil},
+		{name: "empty slice", sets: []*rows{}},
+		{name: "only nil entries", sets: []*rows{nil, nil}},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			rowSet := mergeRowSets(tc.sets)
+			base, ok := rowSet.(*rows)
+			if !ok {
+				t.Fatalf("expected *rows, got %T", rowSet)
+			}
+			if base == nil {
+				t.Fatalf("expected non-nil rows instance")
+			}
+			if err := rowSet.Next(make([]driver.Value, len(rowSet.Columns()))); err != io.EOF {
+				t.Fatalf("expected EOF from empty iterator, got %v", err)
+			}
+		})
+	}
+}
+
+func TestMergeRowSetsSkipsNilEntries(t *testing.T) {
+	actual := newEmptyRows()
+	result := mergeRowSets([]*rows{nil, actual, nil})
+	if result != actual {
+		t.Fatalf("expected mergeRowSets to return the single non-nil set")
+	}
+}
+
+func TestMergeRowSetsPreservesOrderAndSchema(t *testing.T) {
+	setA := newTestRows(t, buildRowDesc("alpha"), []string{"first"})
+	setB := newTestRows(t, buildRowDesc("beta"), []string{"second"})
+	merged := mergeRowSets([]*rows{setA, setB})
+	multi, ok := merged.(*multiRows)
+	if !ok {
+		t.Fatalf("expected multiRows, got %T", merged)
+	}
+
+	dest := make([]driver.Value, len(multi.Columns()))
+	if err := multi.Next(dest); err != nil {
+		t.Fatalf("expected row from first result set, got %v", err)
+	}
+	if got := dest[0]; got != "first" {
+		t.Fatalf("expected first row to be 'first', got %v", got)
+	}
+	if err := multi.Next(dest); err != io.EOF {
+		t.Fatalf("expected EOF after exhausting first set, got %v", err)
+	}
+	if !multi.HasNextResultSet() {
+		t.Fatalf("expected another result set")
+	}
+	if err := multi.NextResultSet(); err != nil {
+		t.Fatalf("expected to advance to second set, got %v", err)
+	}
+	cols := multi.Columns()
+	if len(cols) != 1 || cols[0] != "beta" {
+		t.Fatalf("expected beta column metadata, got %v", cols)
+	}
+	dest = make([]driver.Value, len(cols))
+	if err := multi.Next(dest); err != nil {
+		t.Fatalf("expected row from second set, got %v", err)
+	}
+	if got := dest[0]; got != "second" {
+		t.Fatalf("expected second row to be 'second', got %v", got)
+	}
+	if err := multi.Next(dest); err != io.EOF {
+		t.Fatalf("expected EOF after exhausting second set, got %v", err)
+	}
+	if multi.HasNextResultSet() {
+		t.Fatalf("did not expect additional result sets")
+	}
+	if err := multi.NextResultSet(); err != io.EOF {
+		t.Fatalf("expected EOF when advancing past final set, got %v", err)
+	}
+}
+
+func TestMergeRowSetsCloseClosesAllSets(t *testing.T) {
+	setA := newTestRows(t, buildRowDesc("alpha"))
+	setB := newTestRows(t, buildRowDesc("beta"))
+	multi, ok := mergeRowSets([]*rows{setA, setB}).(*multiRows)
+	if !ok {
+		t.Fatalf("expected multiRows instance")
+	}
+	if err := multi.Close(); err != nil {
+		t.Fatalf("unexpected close error: %v", err)
+	}
+	storeA := setA.resultData.(*testRowStore)
+	storeB := setB.resultData.(*testRowStore)
+	if !storeA.closed || !storeB.closed {
+		t.Fatalf("expected all row stores to be closed")
+	}
+}
+
+func buildRowDesc(names ...string) *msgs.BERowDescMsg {
+	cols := make([]*msgs.BERowDescColumnDef, len(names))
+	for i, name := range names {
+		cols[i] = &msgs.BERowDescColumnDef{
+			FieldName:    name,
+			DataTypeOID:  common.ColTypeVarChar,
+			DataTypeName: "varchar",
+			Length:       10,
+		}
+	}
+	return &msgs.BERowDescMsg{Columns: cols}
+}
+
+func newTestRows(t *testing.T, desc *msgs.BERowDescMsg, rowsData ...[]string) *rows {
+	t.Helper()
+	store := &testRowStore{}
+	r := &rows{
+		columnDefs: desc,
+		resultData: store,
+	}
+	for _, data := range rowsData {
+		msg := newTestDataRow(t, data...)
+		if err := r.addRow(msg); err != nil {
+			t.Fatalf("failed to add row: %v", err)
+		}
+	}
+	return r
+}
+
+func newTestDataRow(t *testing.T, values ...string) *msgs.BEDataRowMsg {
+	t.Helper()
+	buf := &bytes.Buffer{}
+	if err := binary.Write(buf, binary.BigEndian, uint16(len(values))); err != nil {
+		t.Fatalf("unable to write column count: %v", err)
+	}
+	for _, v := range values {
+		payload := []byte(v)
+		if err := binary.Write(buf, binary.BigEndian, uint32(len(payload))); err != nil {
+			t.Fatalf("unable to write column length: %v", err)
+		}
+		if _, err := buf.Write(payload); err != nil {
+			t.Fatalf("unable to write column data: %v", err)
+		}
+	}
+	msg := msgs.BEDataRowMsg(buf.Bytes())
+	return &msg
+}
+
+type testRowStore struct {
+	rows   []*msgs.BEDataRowMsg
+	idx    int
+	closed bool
+}
+
+func (t *testRowStore) AddRow(msg *msgs.BEDataRowMsg) error {
+	t.rows = append(t.rows, msg)
+	return nil
+}
+
+func (t *testRowStore) GetRow() *msgs.BEDataRowMsg {
+	if t.idx >= len(t.rows) {
+		return nil
+	}
+	row := t.rows[t.idx]
+	t.idx++
+	return row
+}
+
+func (t *testRowStore) Peek() *msgs.BEDataRowMsg {
+	if t.idx >= len(t.rows) {
+		return nil
+	}
+	return t.rows[t.idx]
+}
+
+func (t *testRowStore) Close() error {
+	t.closed = true
+	return nil
+}
+
+func (t *testRowStore) Finalize() error { return nil }

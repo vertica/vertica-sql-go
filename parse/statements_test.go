@@ -42,6 +42,16 @@ SELECT 1; /* block;comment */ SELECT 2;`,
 			query:    "  SELECT 1;\n\n ; SELECT 2  ;",
 			expected: []string{"SELECT 1", "SELECT 2"},
 		},
+		{
+			name:     "line comment only",
+			query:    "-- just a comment",
+			expected: nil,
+		},
+		{
+			name:     "double slash line comment",
+			query:    "SELECT 1; // comment about next\nSELECT 2;",
+			expected: []string{"SELECT 1", "SELECT 2"},
+		},
 	}
 
 	for _, tc := range testCases {

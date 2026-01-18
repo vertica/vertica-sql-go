@@ -5,7 +5,7 @@ import (
 	"unicode"
 )
 
-// Copyright (c) 2020-2024 Open Text.
+// Copyright (c) 2020-2026 Open Text.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -36,13 +36,20 @@ func SplitStatements(query string) []string {
 	inLineComment := false
 	inBlockComment := false
 	var dollarTag string
+	statementHasContent := false
 
+	markNonWhitespace := func(b byte) {
+		if !unicode.IsSpace(rune(b)) {
+			statementHasContent = true
+		}
+	}
 	flush := func() {
 		statement := strings.TrimSpace(current.String())
 		current.Reset()
-		if statement != "" {
+		if statement != "" && statementHasContent {
 			statements = append(statements, statement)
 		}
+		statementHasContent = false
 	}
 
 	i := 0
@@ -50,9 +57,9 @@ func SplitStatements(query string) []string {
 		ch := query[i]
 
 		if inLineComment {
-			// Consume everything until the newline terminator.
-			current.WriteByte(ch)
+			// Swallow comment text but keep the newline terminator so tokens remain separated.
 			if ch == '\n' || ch == '\r' {
+				current.WriteByte(ch)
 				inLineComment = false
 			}
 			i++
@@ -76,9 +83,11 @@ func SplitStatements(query string) []string {
 		if inSingleQuote {
 			// Stay inside the literal, handling doubled single quotes.
 			current.WriteByte(ch)
+			markNonWhitespace(ch)
 			if ch == '\'' {
 				if i+1 < len(query) && query[i+1] == '\'' {
 					current.WriteByte('\'')
+					markNonWhitespace('\'')
 					i += 2
 					continue
 				}
@@ -92,9 +101,11 @@ func SplitStatements(query string) []string {
 			// Identifiers can be quoted with double quotes; treat them like
 			// strings for splitter purposes.
 			current.WriteByte(ch)
+			markNonWhitespace(ch)
 			if ch == '"' {
 				if i+1 < len(query) && query[i+1] == '"' {
 					current.WriteByte('"')
+					markNonWhitespace('"')
 					i += 2
 					continue
 				}
@@ -105,10 +116,12 @@ func SplitStatements(query string) []string {
 		}
 
 		if dollarTag != "" {
+			statementHasContent = true
 			// Inside a dollar-quoted literal; exit only when the exact tag is
 			// observed again.
 			if i+len(dollarTag) <= len(query) && query[i:i+len(dollarTag)] == dollarTag {
 				current.WriteString(dollarTag)
+				markNonWhitespace(dollarTag[0])
 				i += len(dollarTag)
 				dollarTag = ""
 				continue
@@ -121,6 +134,7 @@ func SplitStatements(query string) []string {
 		if ch == '\'' {
 			inSingleQuote = true
 			current.WriteByte(ch)
+			markNonWhitespace(ch)
 			i++
 			continue
 		}
@@ -128,30 +142,38 @@ func SplitStatements(query string) []string {
 		if ch == '"' {
 			inDoubleQuote = true
 			current.WriteByte(ch)
+			markNonWhitespace(ch)
 			i++
 			continue
 		}
 
 		if ch == '-' && i+1 < len(query) && query[i+1] == '-' {
-			current.WriteByte('-')
-			current.WriteByte('-')
 			i += 2
 			inLineComment = true
 			continue
 		}
 
-		if ch == '/' && i+1 < len(query) && query[i+1] == '*' {
-			current.WriteByte('/')
-			current.WriteByte('*')
-			i += 2
-			inBlockComment = true
-			continue
+		if ch == '/' && i+1 < len(query) {
+			next := query[i+1]
+			if next == '*' {
+				current.WriteByte('/')
+				current.WriteByte('*')
+				i += 2
+				inBlockComment = true
+				continue
+			}
+			if next == '/' {
+				i += 2
+				inLineComment = true
+				continue
+			}
 		}
 
 		if ch == '$' {
 			if tag, length, ok := readDollarTag(query, i); ok {
 				dollarTag = tag
 				current.WriteString(tag)
+				markNonWhitespace(tag[0])
 				i += length
 				continue
 			}
@@ -164,6 +186,7 @@ func SplitStatements(query string) []string {
 		}
 
 		current.WriteByte(ch)
+		markNonWhitespace(ch)
 		i++
 	}
 
