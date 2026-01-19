@@ -139,7 +139,7 @@ jobs:
             name: verticadb-sample
             namespace: my-verticadb-operator
           spec:
-            image: opentext/vertica-k8s:latest
+            image: opentext/vertica-k8s:25.3.0-2
             dbName: vdb
             initPolicy: Create
             communal:
