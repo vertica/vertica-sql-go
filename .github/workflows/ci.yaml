@@ -373,6 +373,7 @@ jobs:
           kubectl -n ${NS} delete pod go-test-runner --ignore-not-found=true
 
       # Cleanup MinIO
+      
       - name: Uninstall MinIO
         if: always()
         run: |
