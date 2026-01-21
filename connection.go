@@ -164,7 +164,11 @@ func (v *connection) PrepareContext(ctx context.Context, query string) (driver.S
 		return nil, err
 	}
 
-	if v.usePreparedStmts {
+	if len(strings.TrimSpace(s.command)) == 0 {
+		return s, nil
+	}
+
+	if v.usePreparedStmts && !s.multiStatements {
 		if err = s.prepareAndDescribe(); err != nil {
 			return nil, err
 		}
@@ -507,41 +511,32 @@ func (v *connection) initializeSession() error {
 		return err
 	}
 
-	result, err := stmt.QueryContextRaw(context.Background(), []driver.NamedValue{})
-
+	resultRows, err := stmt.QueryContextRaw(context.Background(), []driver.NamedValue{})
 	if err != nil {
 		return err
 	}
+	defer resultRows.Close()
 
-	firstRow := result.resultData.Peek()
-
-	if len(result.Columns()) != 1 && result.Columns()[1] != "now" || firstRow == nil {
+	columns := resultRows.Columns()
+	if len(columns) != 1 || strings.ToLower(columns[0]) != "now" {
 		return fmt.Errorf("unable to initialize session; functionality may be unreliable")
 	}
 
-	// Peek into the results manually.
-	colData := firstRow.Columns()
-	str := string(colData.Chunk())
-
-	if len(str) < 23 {
-		return fmt.Errorf("can't get server timezone: %s", str)
+	values := make([]driver.Value, len(columns))
+	if err := resultRows.Next(values); err != nil {
+		return fmt.Errorf("unable to read server time: %w", err)
 	}
 
-	v.serverTZOffset = getTimeZoneOffset(str)
+	timestamp, ok := values[0].(time.Time)
+	if !ok {
+		return fmt.Errorf("unexpected time value %T", values[0])
+	}
+
+	v.serverTZOffset = timestamp.Format("-07:00")
 
 	connectionLogger.Debug("Setting server timezone offset to %s", v.serverTZOffset)
 
 	return nil
-}
-
-func getTimeZoneOffset(str string) string {
-	for i := len(str) - 1; i >= 0 && i >= len(str)-8; i-- {
-		ch := str[i]
-		if ch == '+' || ch == '-' {
-			return str[i:]
-		}
-	}
-	return "+00"
 }
 
 func (v *connection) defaultMessageHandler(bMsg msgs.BackEndMsg) (bool, error) {
@@ -574,6 +569,8 @@ func (v *connection) defaultMessageHandler(bMsg msgs.BackEndMsg) (bool, error) {
 		connectionLogger.Info("NOTICE: %s", msg.Message)
 	case *msgs.BEParamStatusMsg:
 		connectionLogger.Debug("%v", msg)
+	case *msgs.BEParseCompleteMsg:
+		connectionLogger.Trace("parse complete")
 	default:
 		handled = false
 		err = fmt.Errorf("unhandled message: %v", msg)
