@@ -595,13 +595,27 @@ func (s *stmt) collectResults(ctx context.Context) (*rows, error) {
 
 		switch msg := bMsg.(type) {
 		case *msgs.BEDataRowMsg:
+			// Vertica's Describe phase under-reports the column count for CALL
+			// statements that emit RAISE NOTICE: the DataRow at execution time
+			// may contain more fields than columnDefs describes. Expand columnDefs
+			// on the first DataRow so that Columns() returns the correct width
+			// before database/sql sizes the destination slice.
+			if uint16(len(rows.columnDefs.Columns)) < msg.Columns().NumCols {
+				rows.expandColumnDefs(msg.Columns().NumCols)
+			}
 			err = rows.addRow(msg)
 			if err != nil {
 				return rows, err
 			}
 		case *msgs.BERowDescMsg:
-			s.lastRowDesc = msg
-			rows = newRows(ctx, s.lastRowDesc, s.conn.serverTZOffset)
+			// An execution-time RowDescription may arrive before any DataRows
+			// and can carry a more complete schema than the Describe-phase one.
+			// Only adopt it if it has at least as many columns, to prevent a
+			// truncated description from silently replacing a wider one.
+			if rows.resultData.Peek() == nil && len(msg.Columns) >= len(rows.columnDefs.Columns) {
+				s.lastRowDesc = msg
+				rows = newRows(ctx, s.lastRowDesc, s.conn.serverTZOffset)
+			}
 		case *msgs.BEErrorMsg:
 			s.conn.sync()
 			return newEmptyRows(), s.evaluateErrorMsg(msg)

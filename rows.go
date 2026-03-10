@@ -98,22 +98,7 @@ func (r *rows) Next(dest []driver.Value) error {
 
 	rowCols := nextRow.Columns()
 
-	// Guard against a mismatch between the number of columns described in the
-	// RowDescription message (len(dest) / len(r.columnDefs.Columns)) and the
-	// number of fields actually present in the DataRow message (rowCols.NumCols).
-	// This can happen when a stored procedure emits NOTICE messages before
-	// returning its result set, causing the driver to build a destination slice
-	// that is shorter than the arriving row.  Iterating only up to the minimum
-	// of the two lengths prevents an index-out-of-range panic.
-	numColsToCopy := rowCols.NumCols
-	if destLen := uint16(len(dest)); destLen < numColsToCopy {
-		numColsToCopy = destLen
-	}
-	if colDefsLen := uint16(len(r.columnDefs.Columns)); colDefsLen < numColsToCopy {
-		numColsToCopy = colDefsLen
-	}
-
-	for idx := uint16(0); idx < numColsToCopy; idx++ {
+	for idx := uint16(0); idx < rowCols.NumCols; idx++ {
 		colVal := rowCols.Chunk()
 		if colVal == nil {
 			dest[idx] = nil
@@ -366,4 +351,19 @@ func newEmptyRows() *rows {
 	cdf := make([]*msgs.BERowDescColumnDef, 0)
 	be := &msgs.BERowDescMsg{Columns: cdf}
 	return newRows(context.Background(), be, "")
+}
+
+// expandColumnDefs grows r.columnDefs to cover at least numCols columns.
+// It is a last-resort fallback for CALL statements where Vertica's Describe
+// phase returns an incomplete RowDescription and no execution-time
+// RowDescription is sent to correct it. Synthetic entries use OID 0 so that
+// rows.Next() returns the raw wire bytes as a string (the default case),
+// making the behaviour explicit rather than falsely claiming a specific type.
+func (r *rows) expandColumnDefs(numCols uint16) {
+	for uint16(len(r.columnDefs.Columns)) < numCols {
+		r.columnDefs.Columns = append(r.columnDefs.Columns, &msgs.BERowDescColumnDef{
+			FieldName:   fmt.Sprintf("unknown_col%d", len(r.columnDefs.Columns)),
+			DataTypeOID: 0, // unknown — falls to the default string case in rows.Next()
+		})
+	}
 }
