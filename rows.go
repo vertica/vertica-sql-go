@@ -98,7 +98,22 @@ func (r *rows) Next(dest []driver.Value) error {
 
 	rowCols := nextRow.Columns()
 
-	for idx := uint16(0); idx < rowCols.NumCols; idx++ {
+	// Guard against a mismatch between the number of columns described in the
+	// RowDescription message (len(dest) / len(r.columnDefs.Columns)) and the
+	// number of fields actually present in the DataRow message (rowCols.NumCols).
+	// This can happen when a stored procedure emits NOTICE messages before
+	// returning its result set, causing the driver to build a destination slice
+	// that is shorter than the arriving row.  Iterating only up to the minimum
+	// of the two lengths prevents an index-out-of-range panic.
+	numColsToCopy := rowCols.NumCols
+	if destLen := uint16(len(dest)); destLen < numColsToCopy {
+		numColsToCopy = destLen
+	}
+	if colDefsLen := uint16(len(r.columnDefs.Columns)); colDefsLen < numColsToCopy {
+		numColsToCopy = colDefsLen
+	}
+
+	for idx := uint16(0); idx < numColsToCopy; idx++ {
 		colVal := rowCols.Chunk()
 		if colVal == nil {
 			dest[idx] = nil
