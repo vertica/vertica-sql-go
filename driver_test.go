@@ -1660,6 +1660,128 @@ func TestInvalidEmailParseStatement(t *testing.T) {
 		assertEqual(t, all_roles, role)
 	}
 }
+
+// TestStoredProcedureWithNotice verifies that rows.Next() does not panic when a
+// stored procedure raises one or more RAISE NOTICE messages before returning its
+// result set.
+//
+// Root cause: Vertica sends a correct RowDescription (2 cols: a, b) for the CALL
+// result, then emits NoticeResponse messages, then sends a spurious second
+// RowDescription with fewer columns (a PLvSQL protocol artefact).  The driver was
+// blindly adopting the second RowDescription, so r.columnDefs ended up with 1
+// column while the DataRow still contained 2 fields — causing an index-out-of-range
+// panic in rows.Next().
+//
+// Fix: runSimpleStatement and collectResults now ignore any RowDescription that
+// arrives after DataRows have already been buffered for the current result set.
+func TestStoredProcedureWithNotice(t *testing.T) {
+	connDB := openConnection(t)
+	defer closeConnection(t, connDB)
+
+	// Create the procedure; drop it afterward.
+	_, err := connDB.ExecContext(ctx, `
+		CREATE OR REPLACE PROCEDURE test_notice_proc(INOUT a INT, INOUT b VARCHAR(64))
+		LANGUAGE PLvSQL AS $$
+		BEGIN
+			RAISE NOTICE 'Value of a: %', a;
+			RAISE NOTICE 'Value of b: %', b;
+		END;
+		$$`)
+	assertNoErr(t, err)
+
+	defer connDB.ExecContext(ctx, "DROP PROCEDURE IF EXISTS test_notice_proc(INT, VARCHAR)")
+
+	// CALL must not panic.  We wrap in a recover so that a panic becomes a
+	// test failure with a meaningful message rather than crashing the whole
+	// test binary.
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("rows.Next() panicked when stored procedure emitted NOTICE messages: %v", r)
+			}
+		}()
+
+		rows, err := connDB.QueryContext(ctx, "CALL test_notice_proc(10, 'hello')")
+		assertNoErr(t, err)
+		defer rows.Close()
+
+		// Iterate over all result sets (NOTICE messages may produce extra sets).
+		for {
+			cols, err := rows.Columns()
+			assertNoErr(t, err)
+
+			valuePtrs := make([]interface{}, len(cols))
+			values := make([]interface{}, len(cols))
+			for i := range values {
+				valuePtrs[i] = &values[i]
+			}
+
+			for rows.Next() {
+				assertNoErr(t, rows.Scan(valuePtrs...))
+				testLogger.Debug("TestStoredProcedureWithNotice row: %v", values)
+			}
+
+			if !rows.NextResultSet() {
+				break
+			}
+		}
+	}()
+}
+
+// TestStoredProcedureWithNoticeSimpleQuery is the same scenario as
+// TestStoredProcedureWithNotice but forces the simple query protocol path
+// (use_prepared_statements=0) to verify correct behaviour on both code paths.
+func TestStoredProcedureWithNoticeSimpleQuery(t *testing.T) {
+	simpleConnStr := strings.Replace(myDBConnectString, "use_prepared_statements=1", "use_prepared_statements=0", 1)
+	connDB, err := sql.Open("vertica", simpleConnStr)
+	assertNoErr(t, err)
+	assertNoErr(t, connDB.PingContext(ctx))
+	defer closeConnection(t, connDB)
+
+	_, err = connDB.ExecContext(ctx, `
+		CREATE OR REPLACE PROCEDURE test_notice_proc_simple(INOUT a INT, INOUT b VARCHAR(64))
+		LANGUAGE PLvSQL AS $$
+		BEGIN
+			RAISE NOTICE 'Value of a: %', a;
+			RAISE NOTICE 'Value of b: %', b;
+		END;
+		$$`)
+	assertNoErr(t, err)
+	defer connDB.ExecContext(ctx, "DROP PROCEDURE IF EXISTS test_notice_proc_simple(INT, VARCHAR)")
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("rows.Next() panicked on simple query path: %v", r)
+			}
+		}()
+
+		rows, err := connDB.QueryContext(ctx, "CALL test_notice_proc_simple(10, 'hello')")
+		assertNoErr(t, err)
+		defer rows.Close()
+
+		for {
+			cols, err := rows.Columns()
+			assertNoErr(t, err)
+
+			valuePtrs := make([]interface{}, len(cols))
+			values := make([]interface{}, len(cols))
+			for i := range values {
+				valuePtrs[i] = &values[i]
+			}
+
+			for rows.Next() {
+				assertNoErr(t, rows.Scan(valuePtrs...))
+				testLogger.Debug("TestStoredProcedureWithNoticeSimpleQuery row: %v", values)
+			}
+
+			if !rows.NextResultSet() {
+				break
+			}
+		}
+	}()
+}
+
 func init() {
 	// One or both lines below are necessary depending on your go version
 	testing.Init()
