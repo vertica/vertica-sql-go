@@ -596,10 +596,15 @@ func (s *stmt) collectResults(ctx context.Context) (*rows, error) {
 		switch msg := bMsg.(type) {
 		case *msgs.BEDataRowMsg:
 			// Vertica's Describe phase under-reports the column count for CALL
-			// statements that emit RAISE NOTICE: the DataRow at execution time
-			// may contain more fields than columnDefs describes. Expand columnDefs
-			// on the first DataRow so that Columns() returns the correct width
-			// before database/sql sizes the destination slice.
+			// statements that emit RAISE NOTICE: a DataRow at execution time may
+			// contain more fields than columnDefs describes. Expand columnDefs
+			// whenever a wider DataRow is seen so that Columns() always returns
+			// the correct width.
+			//
+			// This is safe because collectResults() is synchronous and fully
+			// buffers all rows before returning *rows to the caller. database/sql
+			// calls Columns() only after receiving that object, so all expansions
+			// are complete by the time the column list is observed.
 			if uint16(len(rows.columnDefs.Columns)) < msg.Columns().NumCols {
 				rows.expandColumnDefs(msg.Columns().NumCols)
 			}

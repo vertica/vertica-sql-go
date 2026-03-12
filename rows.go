@@ -359,6 +359,15 @@ func newEmptyRows() *rows {
 // RowDescription is sent to correct it. Synthetic entries use OID 0 so that
 // rows.Next() returns the raw wire bytes as a string (the default case),
 // making the behaviour explicit rather than falsely claiming a specific type.
+// The caller invokes this whenever a DataRow wider than columnDefs is seen,
+// not only on the first row.
+//
+// Ordering guarantee: this function is called inside collectResults(), which
+// fully drains the wire and buffers all rows before returning the *rows object
+// to database/sql. Because database/sql only calls Columns() after receiving
+// that object, all expansions are complete before Columns() executes.
+// This invariant would break in a streaming/lazy-row model where *rows is
+// handed to the caller before all DataRows have been received.
 func (r *rows) expandColumnDefs(numCols uint16) {
 	for uint16(len(r.columnDefs.Columns)) < numCols {
 		r.columnDefs.Columns = append(r.columnDefs.Columns, &msgs.BERowDescColumnDef{
