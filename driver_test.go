@@ -43,6 +43,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"reflect"
 	//"regexp"
 	"strings"
@@ -1311,6 +1312,42 @@ func TestSTDINCopyWithStream(t *testing.T) {
 	defer rows.Close()
 
 	columns, _ := rows.Columns()
+	assertEqual(t, len(columns), 2)
+
+	names := []string{"john", "roger", "siting", "tom", "yang"}
+	ids := []int{555, 123, 456, 789, 333}
+	matched := 0
+	var name string
+	var id int
+
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&name, &id))
+		assertEqual(t, name, names[matched])
+		assertEqual(t, id, ids[matched])
+		matched++
+	}
+
+	assertEqual(t, matched, 5)
+	assertNoNext(t, rows)
+}
+
+func TestLocalCopy(t *testing.T) {
+	connDB := openConnection(t, "test_copy_local_pre")
+	defer closeConnection(t, connDB, "test_copy_local_post")
+
+	dataPath, err := filepath.Abs("./resources/csv/sample_data.csv")
+	assertNoErr(t, err)
+
+	copySQL := fmt.Sprintf("COPY csv_values FROM LOCAL '%s' DELIMITER ','", filepath.ToSlash(dataPath))
+	_, err = connDB.ExecContext(ctx, copySQL)
+	assertNoErr(t, err)
+
+	rows, err := connDB.QueryContext(ctx, "SELECT name,id FROM csv_values ORDER BY name")
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	assertNoErr(t, err)
 	assertEqual(t, len(columns), 2)
 
 	names := []string{"john", "roger", "siting", "tom", "yang"}
