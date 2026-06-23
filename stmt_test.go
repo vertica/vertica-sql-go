@@ -257,6 +257,16 @@ func TestNumInput(t *testing.T) {
 			query:    "select * from test where a = 'test?'",
 			expected: 0,
 		},
+		{
+			name:     "at sign in object name is not input",
+			query:    `CREATE VIEW vw_user@2024 AS SELECT user_id FROM "user"`,
+			expected: 0,
+		},
+		{
+			name:     "at sign in quoted identifier is not input",
+			query:    `CREATE TABLE "user@2024" (user_id INT)`,
+			expected: 0,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
