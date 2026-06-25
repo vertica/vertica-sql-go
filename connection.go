@@ -168,7 +168,9 @@ func (v *connection) PrepareContext(ctx context.Context, query string) (driver.S
 		return s, nil
 	}
 
-	if v.usePreparedStmts && !s.multiStatements {
+	// LOCAL COPY statements must use the simple query protocol at execution time,
+	// so skip server-side preparation entirely to avoid orphaned prepared statements.
+	if v.usePreparedStmts && !s.multiStatements && !s.isLocalCopyStatement() {
 		if err = s.prepareAndDescribe(); err != nil {
 			return nil, err
 		}
