@@ -155,6 +155,36 @@ func TestLexNamed(t *testing.T) {
 			a = ?
 `,
 		},
+		{
+			name:           "at sign inside invalid unquoted object name is not a named parameter",
+			query:          `CREATE VIEW vw_user@2024 AS SELECT user_id FROM "user"`,
+			expectedNamed:  []string{},
+			expectedOutput: `CREATE VIEW vw_user@2024 AS SELECT user_id FROM "user"`,
+		},
+		{
+			name:           "at sign inside quoted identifier is not a named parameter",
+			query:          `CREATE TABLE "user@2024" (user_id INT)`,
+			expectedNamed:  []string{},
+			expectedOutput: `CREATE TABLE "user@2024" (user_id INT)`,
+		},
+		{
+			name:           "at sign followed by digit is not a named parameter",
+			query:          `SELECT @2024`,
+			expectedNamed:  []string{},
+			expectedOutput: `SELECT @2024`,
+		},
+		{
+			name:           "named param stops before arithmetic operator",
+			query:          `select * from table where a = @name+1`,
+			expectedNamed:  []string{"NAME"},
+			expectedOutput: `select * from table where a = ?+1`,
+		},
+		{
+			name:           "named param stops before type cast",
+			query:          `select * from table where a = @name::int`,
+			expectedNamed:  []string{"NAME"},
+			expectedOutput: `select * from table where a = ?::int`,
+		},
 	}
 	var encounteredNames nameCapture
 	for _, tc := range testCases {
