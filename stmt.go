@@ -40,6 +40,7 @@ import (
 	"io"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
@@ -54,6 +55,7 @@ import (
 var (
 	stmtLogger        = logger.New("stmt")
 	emailRegexPattern = regexp.MustCompile(`[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
+	copyLocalRegex    = regexp.MustCompile(`(?is)\bFROM\s+LOCAL\s+'((?:''|[^'])*)'`)
 )
 
 type parseState int
@@ -291,7 +293,11 @@ func (s *stmt) QueryContextRaw(ctx context.Context, baseArgs []driver.NamedValue
 		doneChan <- true
 	}()
 
-	if s.parseState == parseStateParsed {
+	// LOCAL COPY must always use the simple query protocol. With the prepared-
+	// statement path, bindAndExecute sends FEFlushMsg right after FEExecuteMsg;
+	// the server enters GetLocalFileInfo state while processing FEExecuteMsg and
+	// then rejects the FEFlushMsg with "Flush is invalid in state GetLocalFileInfo".
+	if s.parseState == parseStateParsed && !s.isLocalCopyStatement() {
 		if err = s.bindAndExecute("", args); err != nil {
 			return newEmptyRows(), err
 		}
@@ -310,7 +316,29 @@ func (s *stmt) QueryContextRaw(ctx context.Context, baseArgs []driver.NamedValue
 
 	resultSets := make([]*rows, 0, len(statements))
 	for _, statementSQL := range statements {
-		resultSet, runErr := s.runSimpleStatement(ctx, statementSQL)
+		execSQL := statementSQL
+		execCtx := ctx
+		var localFile *os.File
+
+		if rewrittenSQL, localPath, isLocal := rewriteLocalCopyToSTDIN(statementSQL); isLocal {
+			execSQL = rewrittenSQL
+			localFile, err = os.Open(filepath.Clean(localPath))
+			if err != nil {
+				return newEmptyRows(), err
+			}
+
+			vCtx := NewVerticaContext(ctx)
+			if parentCtx, ok := ctx.(VerticaContext); ok {
+				_ = vCtx.SetCopyBlockSizeBytes(parentCtx.GetCopyBlockSizeBytes())
+			}
+			_ = vCtx.SetCopyInputStream(localFile)
+			execCtx = vCtx
+		}
+
+		resultSet, runErr := s.runSimpleStatement(execCtx, execSQL)
+		if localFile != nil {
+			_ = localFile.Close()
+		}
 		if runErr != nil {
 			return newEmptyRows(), runErr
 		}
@@ -346,6 +374,59 @@ func (s *stmt) copySTDIN(ctx context.Context) {
 		s.conn.sendMessage(&msgs.FELoadDataMsg{Data: block, UsedBytes: bytesRead})
 	}
 	s.conn.sendMessage(&msgs.FEFlushMsg{})
+}
+
+func (s *stmt) verifyLocalFiles(msg *msgs.BEVerifyLoadFilesMsg) error {
+	fileSizes := make([]uint64, len(msg.FileList))
+
+	for idx, fileName := range msg.FileList {
+		fileInfo, err := os.Stat(filepath.Clean(fileName))
+		if err != nil {
+			return s.conn.sendMessage(&msgs.FELoadFailMsg{Message: err.Error()})
+		}
+		if fileInfo.IsDir() {
+			return s.conn.sendMessage(&msgs.FELoadFailMsg{Message: fmt.Sprintf("%s is a directory", fileName)})
+		}
+		fileSizes[idx] = uint64(fileInfo.Size())
+	}
+
+	return s.conn.sendMessage(&msgs.FEVerifyLoadFiles{FileNames: msg.FileList, FileSizes: fileSizes})
+}
+
+func (s *stmt) copyLocalFile(ctx context.Context, fileName string) error {
+	copyBlockSize := stdInDefaultCopyBlockSize
+	if vCtx, ok := ctx.(VerticaContext); ok {
+		copyBlockSize = vCtx.GetCopyBlockSizeBytes()
+	}
+
+	fileHandle, err := os.Open(filepath.Clean(fileName))
+	if err != nil {
+		if sendErr := s.conn.sendMessage(&msgs.FELoadFailMsg{Message: err.Error()}); sendErr != nil {
+			return sendErr
+		}
+		return nil
+	}
+	defer fileHandle.Close()
+
+	block := make([]byte, copyBlockSize)
+	for {
+		bytesRead, readErr := fileHandle.Read(block)
+		if readErr == io.EOF {
+			// Signal end-of-file to the server. Do NOT send FEFlushMsg ('H') here:
+			// after FELoadDoneMsg the server may still be in GetLocalFileInfo state
+			// (e.g. waiting for additional files), and 'H' is invalid in that state.
+			return s.conn.sendMessage(&msgs.FELoadDoneMsg{})
+		}
+		if readErr != nil {
+			if err = s.conn.sendMessage(&msgs.FELoadFailMsg{Message: readErr.Error()}); err != nil {
+				return err
+			}
+			return nil
+		}
+		if err = s.conn.sendMessage(&msgs.FELoadDataMsg{Data: block, UsedBytes: bytesRead}); err != nil {
+			return err
+		}
+	}
 }
 
 func (s *stmt) runSimpleStatement(ctx context.Context, sql string) (*rows, error) {
@@ -391,6 +472,14 @@ func (s *stmt) runSimpleStatement(ctx context.Context, sql string) (*rows, error
 			return result, nil
 		case *msgs.BEInitSTDINLoadMsg:
 			s.copySTDIN(ctx)
+		case *msgs.BEVerifyLoadFilesMsg:
+			if err = s.verifyLocalFiles(msg); err != nil {
+				return newEmptyRows(), err
+			}
+		case *msgs.BELoadNewFileMsg:
+			if err = s.copyLocalFile(ctx, msg.FileName); err != nil {
+				return newEmptyRows(), err
+			}
 		default:
 			s.conn.defaultMessageHandler(bMsg)
 		}
@@ -489,6 +578,28 @@ func (s *stmt) evaluateErrorMsg(msg *msgs.BEErrorMsg) error {
 		s.rolledBack = true
 	}
 	return errorMsgToVError(msg)
+}
+
+func rewriteLocalCopyToSTDIN(statement string) (string, string, bool) {
+	match := copyLocalRegex.FindStringSubmatchIndex(statement)
+	if len(match) < 4 {
+		return statement, "", false
+	}
+
+	localPath := statement[match[2]:match[3]]
+	localPath = strings.ReplaceAll(localPath, "''", "'")
+	rewritten := statement[:match[0]] + "FROM STDIN" + statement[match[1]:]
+
+	return rewritten, localPath, true
+}
+
+// isLocalCopyStatement reports whether the statement is a COPY ... FROM LOCAL ...
+// command. Such statements must use the simple query protocol because the server
+// enters the GetLocalFileInfo state immediately after FEExecuteMsg is processed,
+// making the trailing FEFlushMsg sent by bindAndExecute invalid in that state.
+func (s *stmt) isLocalCopyStatement() bool {
+	upper := strings.ToUpper(strings.TrimSpace(s.command))
+	return strings.HasPrefix(upper, "COPY") && strings.Contains(upper, "FROM LOCAL")
 }
 
 func (s *stmt) prepareAndDescribe() error {
@@ -636,6 +747,14 @@ func (s *stmt) collectResults(ctx context.Context) (*rows, error) {
 			return rows, ctx.Err()
 		case *msgs.BEInitSTDINLoadMsg:
 			s.copySTDIN(ctx)
+		case *msgs.BEVerifyLoadFilesMsg:
+			if err = s.verifyLocalFiles(msg); err != nil {
+				return newEmptyRows(), err
+			}
+		case *msgs.BELoadNewFileMsg:
+			if err = s.copyLocalFile(ctx, msg.FileName); err != nil {
+				return newEmptyRows(), err
+			}
 		default:
 			_, _ = s.conn.defaultMessageHandler(msg)
 		}

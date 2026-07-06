@@ -43,6 +43,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"reflect"
 	//"regexp"
 	"strings"
@@ -1330,7 +1331,195 @@ func TestSTDINCopyWithStream(t *testing.T) {
 	assertNoNext(t, rows)
 }
 
+func TestLocalCopy(t *testing.T) {
+	connDB := openConnection(t, "test_copy_local_pre")
+	defer closeConnection(t, connDB, "test_copy_local_post")
+
+	dataPath, err := filepath.Abs("./resources/csv/sample_data.csv")
+	assertNoErr(t, err)
+
+	copySQL := fmt.Sprintf("COPY csv_values FROM LOCAL '%s' DELIMITER ','", filepath.ToSlash(dataPath))
+	_, err = connDB.ExecContext(ctx, copySQL)
+	assertNoErr(t, err)
+
+	rows, err := connDB.QueryContext(ctx, "SELECT name,id FROM csv_values ORDER BY name")
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	assertNoErr(t, err)
+	assertEqual(t, len(columns), 2)
+
+	names := []string{"john", "roger", "siting", "tom", "yang"}
+	ids := []int{555, 123, 456, 789, 333}
+	matched := 0
+	var name string
+	var id int
+
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&name, &id))
+		assertEqual(t, name, names[matched])
+		assertEqual(t, id, ids[matched])
+		matched++
+	}
+
+	assertEqual(t, matched, 5)
+	assertNoNext(t, rows)
+}
+
 // Issue 44 : error during parsing of prepared statement causes perpetual error state
+
+func TestLocalCopyJSON(t *testing.T) {
+	connDB := openConnection(t, "test_copy_local_json_pre")
+	defer closeConnection(t, connDB, "test_copy_local_json_post")
+
+	dataPath, err := filepath.Abs("./resources/json/sample_data.json")
+	assertNoErr(t, err)
+
+	// FJSONPARSER maps JSON object keys to column names
+	copySQL := fmt.Sprintf(
+		"COPY json_values FROM LOCAL '%s' PARSER FJSONPARSER()",
+		filepath.ToSlash(dataPath),
+	)
+	_, err = connDB.ExecContext(ctx, copySQL)
+	assertNoErr(t, err)
+
+	rows, err := connDB.QueryContext(ctx, "SELECT name,id FROM json_values ORDER BY name")
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	assertNoErr(t, err)
+	assertEqual(t, len(columns), 2)
+
+	names := []string{"john", "roger", "siting", "tom", "yang"}
+	ids := []int{555, 123, 456, 789, 333}
+	matched := 0
+	var name string
+	var id int
+
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&name, &id))
+		assertEqual(t, name, names[matched])
+		assertEqual(t, id, ids[matched])
+		matched++
+	}
+
+	assertEqual(t, matched, 5)
+	assertNoNext(t, rows)
+}
+
+func TestLocalCopyPipeDelimited(t *testing.T) {
+	connDB := openConnection(t, "test_copy_local_pipe_pre")
+	defer closeConnection(t, connDB, "test_copy_local_pipe_post")
+
+	dataPath, err := filepath.Abs("./resources/pipe/sample_data.psv")
+	assertNoErr(t, err)
+
+	copySQL := fmt.Sprintf(
+		"COPY pipe_values FROM LOCAL '%s' DELIMITER '|'",
+		filepath.ToSlash(dataPath),
+	)
+	_, err = connDB.ExecContext(ctx, copySQL)
+	assertNoErr(t, err)
+
+	rows, err := connDB.QueryContext(ctx, "SELECT name,id FROM pipe_values ORDER BY name")
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	assertNoErr(t, err)
+	assertEqual(t, len(columns), 2)
+
+	names := []string{"john", "roger", "siting", "tom", "yang"}
+	ids := []int{555, 123, 456, 789, 333}
+	matched := 0
+	var name string
+	var id int
+
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&name, &id))
+		assertEqual(t, name, names[matched])
+		assertEqual(t, id, ids[matched])
+		matched++
+	}
+
+	assertEqual(t, matched, 5)
+	assertNoNext(t, rows)
+}
+
+func TestLocalCopyTSV(t *testing.T) {
+	connDB := openConnection(t, "test_copy_local_tsv_pre")
+	defer closeConnection(t, connDB, "test_copy_local_tsv_post")
+
+	dataPath, err := filepath.Abs("./resources/tsv/sample_data.tsv")
+	assertNoErr(t, err)
+
+	// Tab is the default Vertica delimiter; E'\t' is explicit
+	copySQL := fmt.Sprintf(
+		"COPY tsv_values FROM LOCAL '%s' DELIMITER E'\\t'",
+		filepath.ToSlash(dataPath),
+	)
+	_, err = connDB.ExecContext(ctx, copySQL)
+	assertNoErr(t, err)
+
+	rows, err := connDB.QueryContext(ctx, "SELECT name,id FROM tsv_values ORDER BY name")
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	assertNoErr(t, err)
+	assertEqual(t, len(columns), 2)
+
+	names := []string{"john", "roger", "siting", "tom", "yang"}
+	ids := []int{555, 123, 456, 789, 333}
+	matched := 0
+	var name string
+	var id int
+
+	for rows.Next() {
+		assertNoErr(t, rows.Scan(&name, &id))
+		assertEqual(t, name, names[matched])
+		assertEqual(t, id, ids[matched])
+		matched++
+	}
+
+	assertEqual(t, matched, 5)
+	assertNoNext(t, rows)
+}
+
+// TestLocalCopyAvro validates COPY LOCAL for Avro data using FAVROPARSER.
+
+func TestLocalCopyAvro(t *testing.T) {
+	connDB := openConnection(t, "test_copy_local_avro_pre")
+	defer closeConnection(t, connDB, "test_copy_local_avro_post")
+
+	dataPath, err := filepath.Abs("./resources/avro/weather.avro")
+	assertNoErr(t, err)
+
+	copySQL := fmt.Sprintf(
+		"COPY weather FROM LOCAL '%s' PARSER FAVROPARSER()",
+		filepath.ToSlash(dataPath),
+	)
+	_, err = connDB.ExecContext(ctx, copySQL)
+	assertNoErr(t, err)
+
+	rows, err := connDB.QueryContext(ctx, "SELECT temp FROM weather WHERE temp < 20 ORDER BY temp")
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	temps := make([]int, 0)
+	for rows.Next() {
+		var temp int
+		assertNoErr(t, rows.Scan(&temp))
+		assertTrue(t, temp < 20)
+		temps = append(temps, temp)
+	}
+
+	assertNoNext(t, rows)
+	assertTrue(t, len(temps) > 0)
+}
+
 // https://github.com/vertica/vertica-sql-go/issues/44
 func TestHangAfterError(t *testing.T) {
 	connDB := openConnection(t)
