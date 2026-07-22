@@ -1342,6 +1342,108 @@ func TestLocalCopy(t *testing.T) {
 	_, err = connDB.ExecContext(ctx, copySQL)
 	assertNoErr(t, err)
 
+	assertCopyCSVValues(t, connDB)
+}
+
+func TestLocalCopyCSVMultipleFiles(t *testing.T) {
+	connDB := openConnection(t, "test_copy_local_pre")
+	defer closeConnection(t, connDB, "test_copy_local_post")
+
+	dataPath, err := filepath.Abs("./resources/csv/sample_data.csv")
+	assertNoErr(t, err)
+
+	body, err := ioutil.ReadFile(dataPath)
+	assertNoErr(t, err)
+
+	tmpDir := t.TempDir()
+	secondPath := filepath.Join(tmpDir, "sample_data_2.csv")
+	thirdPath := filepath.Join(tmpDir, "sample_data_3.csv")
+	assertNoErr(t, ioutil.WriteFile(secondPath, body, 0600))
+	assertNoErr(t, ioutil.WriteFile(thirdPath, body, 0600))
+
+	copySQL := fmt.Sprintf(
+		"COPY csv_values FROM LOCAL '%s', '%s', '%s' DELIMITER ','",
+		filepath.ToSlash(dataPath),
+		filepath.ToSlash(secondPath),
+		filepath.ToSlash(thirdPath),
+	)
+	_, err = connDB.ExecContext(ctx, copySQL)
+	assertNoErr(t, err)
+
+	rows, err := connDB.QueryContext(ctx, "SELECT COUNT(*) FROM csv_values")
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	assertNext(t, rows)
+	var count int
+	assertNoErr(t, rows.Scan(&count))
+	assertEqual(t, count, 15)
+	assertNoNext(t, rows)
+}
+
+func TestLocalCopyCSVMultipleFilesMissingFile(t *testing.T) {
+	connDB := openConnection(t, "test_copy_local_pre")
+	defer closeConnection(t, connDB, "test_copy_local_post")
+
+	dataPath, err := filepath.Abs("./resources/csv/sample_data.csv")
+	assertNoErr(t, err)
+
+	body, err := ioutil.ReadFile(dataPath)
+	assertNoErr(t, err)
+
+	tmpDir := t.TempDir()
+	secondPath := filepath.Join(tmpDir, "sample_data_2.csv")
+	missingPath := filepath.Join(tmpDir, "missing_sample_data.csv")
+	assertNoErr(t, ioutil.WriteFile(secondPath, body, 0600))
+
+	copySQL := fmt.Sprintf(
+		"COPY csv_values FROM LOCAL '%s', '%s', '%s' DELIMITER ','",
+		filepath.ToSlash(dataPath),
+		filepath.ToSlash(secondPath),
+		filepath.ToSlash(missingPath),
+	)
+	_, err = connDB.ExecContext(ctx, copySQL)
+	assertErr(t, err, "no such file or directory")
+	
+	// Verify connection is still usable after error
+	// drainUntilReady() should have restored protocol state
+	var result int
+	err = connDB.QueryRowContext(ctx, "SELECT 1").Scan(&result)
+	assertNoErr(t, err)
+	assertEqual(t, result, 1)
+}
+
+func TestLocalCopyCSVMultipleFilesSchemaMismatch(t *testing.T) {
+	connDB := openConnection(t, "test_copy_local_pre")
+	defer closeConnection(t, connDB, "test_copy_local_post")
+
+	dataPath, err := filepath.Abs("./resources/csv/sample_data.csv")
+	assertNoErr(t, err)
+
+	tmpDir := t.TempDir()
+	badSchemaPath := filepath.Join(tmpDir, "sample_data_bad_schema.csv")
+	badContent := []byte("john,555,extra_column\nroger,456,extra_column\n")
+	assertNoErr(t, ioutil.WriteFile(badSchemaPath, badContent, 0600))
+
+	copySQL := fmt.Sprintf(
+		"COPY csv_values FROM LOCAL '%s', '%s' DELIMITER ',' ABORT ON ERROR",
+		filepath.ToSlash(dataPath),
+		filepath.ToSlash(badSchemaPath),
+	)
+	_, err = connDB.ExecContext(ctx, copySQL)
+	assertTrue(t, err != nil)
+	
+	// Verify connection is still usable after error
+	// drainUntilReady() should have restored protocol state
+	var result int
+	err = connDB.QueryRowContext(ctx, "SELECT 1").Scan(&result)
+	assertNoErr(t, err)
+	assertEqual(t, result, 1)
+}
+
+func assertCopyCSVValues(t *testing.T, connDB *sql.DB) {
+	t.Helper()
+
 	rows, err := connDB.QueryContext(ctx, "SELECT name,id FROM csv_values ORDER BY name")
 	assertNoErr(t, err)
 	defer rows.Close()
@@ -1365,6 +1467,54 @@ func TestLocalCopy(t *testing.T) {
 
 	assertEqual(t, matched, 5)
 	assertNoNext(t, rows)
+}
+
+func TestLocalCopySQLVariants(t *testing.T) {
+	connDB := openConnection(t, "test_copy_local_pre")
+	defer closeConnection(t, connDB, "test_copy_local_post")
+
+	dataPath, err := filepath.Abs("./resources/csv/sample_data.csv")
+	assertNoErr(t, err)
+
+	testCases := []struct {
+		name        string
+		sqlTemplate string
+	}{
+		{
+			name:        "leading comment",
+			sqlTemplate: "-- daily load\nCOPY csv_values FROM LOCAL '%s' DELIMITER ','",
+		},
+		{
+			name:        "leading whitespace",
+			sqlTemplate: "\n\n COPY csv_values FROM LOCAL '%s' DELIMITER ','",
+		},
+		{
+			name:        "tabs between keywords",
+			sqlTemplate: "COPY csv_values FROM\tLOCAL\t'%s' DELIMITER ','",
+		},
+		{
+			name:        "inline block comment",
+			sqlTemplate: "COPY csv_values FROM /*note*/ LOCAL '%s' DELIMITER ','",
+		},
+		{
+			name:        "line comment between from and local",
+			sqlTemplate: "COPY csv_values FROM --note\nLOCAL '%s' DELIMITER ','",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			_, err = connDB.ExecContext(ctx, "DELETE FROM csv_values")
+			assertNoErr(t, err)
+
+			copySQL := fmt.Sprintf(tc.sqlTemplate, filepath.ToSlash(dataPath))
+			_, err = connDB.ExecContext(ctx, copySQL)
+			assertNoErr(t, err)
+
+			assertCopyCSVValues(t, connDB)
+		})
+	}
 }
 
 // Issue 44 : error during parsing of prepared statement causes perpetual error state
@@ -1406,6 +1556,45 @@ func TestLocalCopyJSON(t *testing.T) {
 	}
 
 	assertEqual(t, matched, 5)
+	assertNoNext(t, rows)
+}
+
+func TestLocalCopyJSONMultipleFiles(t *testing.T) {
+	connDB := openConnection(t, "test_copy_local_json_pre")
+	defer closeConnection(t, connDB, "test_copy_local_json_post")
+
+	dataPath, err := filepath.Abs("./resources/json/sample_data.json")
+	assertNoErr(t, err)
+
+	body, err := ioutil.ReadFile(dataPath)
+	assertNoErr(t, err)
+
+	tmpDir := t.TempDir()
+	secondPath := filepath.Join(tmpDir, "sample_data_2.json")
+	assertNoErr(t, ioutil.WriteFile(secondPath, body, 0600))
+
+	_, err = connDB.ExecContext(ctx, "DROP TABLE IF EXISTS json_values_rejects")
+	assertNoErr(t, err)
+	defer func() {
+		_, _ = connDB.ExecContext(ctx, "DROP TABLE IF EXISTS json_values_rejects")
+	}()
+
+	copySQL := fmt.Sprintf(
+		"COPY json_values FROM LOCAL '%s', '%s' PARSER FJSONPARSER() REJECTED DATA AS TABLE json_values_rejects",
+		filepath.ToSlash(dataPath),
+		filepath.ToSlash(secondPath),
+	)
+	_, err = connDB.ExecContext(ctx, copySQL)
+	assertNoErr(t, err)
+
+	rows, err := connDB.QueryContext(ctx, "SELECT COUNT(*) FROM json_values")
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	assertNext(t, rows)
+	var count int
+	assertNoErr(t, rows.Scan(&count))
+	assertEqual(t, count, 10)
 	assertNoNext(t, rows)
 }
 

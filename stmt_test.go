@@ -279,6 +279,168 @@ func TestNumInput(t *testing.T) {
 	}
 }
 
+func TestIsLocalCopyStatementVariants(t *testing.T) {
+	testCases := []struct {
+		name     string
+		query    string
+		expected bool
+	}{
+		{
+			name:     "leading line comment",
+			query:    "-- daily load\nCOPY t1 FROM LOCAL '/tmp/copy_functionality_files/f1.csv' DELIMITER ',';",
+			expected: true,
+		},
+		{
+			name:     "leading whitespace",
+			query:    "\n\n COPY t1 FROM LOCAL '/tmp/copy_functionality_files/f1.csv' DELIMITER ',';",
+			expected: true,
+		},
+		{
+			name:     "tabs between keywords",
+			query:    "COPY t1 FROM\tLOCAL\t'/tmp/copy_functionality_files/f1.csv' DELIMITER ',';",
+			expected: true,
+		},
+		{
+			name:     "block comment between from and local",
+			query:    "COPY t1 FROM /*note*/ LOCAL '/tmp/copy_functionality_files/f1.csv' DELIMITER ',';",
+			expected: true,
+		},
+		{
+			name:     "line comment between from and local",
+			query:    "COPY t1 FROM --note\nLOCAL '/tmp/copy_functionality_files/f1.csv' DELIMITER ',';",
+			expected: true,
+		},
+		{
+			name: "multiple local files",
+			query: "COPY local_file_tests FROM LOCAL '/home/release/siva/mountains.json', "+
+				"'/home/release/siva/mountains1.json' PARSER FJSONPARSER() REJECTED DATA AS TABLE local_file_tests_rejects;",
+			expected: true,
+		},
+		{
+			name:     "copy token in string literal",
+			query:    "SELECT 'COPY t1 FROM LOCAL ''/tmp/f1.csv''' AS txt;",
+			expected: false,
+		},
+		{
+			name:     "multiple statements",
+			query:    "SELECT 1; COPY t1 FROM LOCAL '/tmp/copy_functionality_files/f1.csv';",
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := testStatement(tc.query)
+			if got := s.isLocalCopyStatement(); got != tc.expected {
+				t.Fatalf("expected %v, got %v", tc.expected, got)
+			}
+		})
+	}
+}
+
+func TestRewriteLocalCopyToSTDINVariants(t *testing.T) {
+	testCases := []struct {
+		name          string
+		query         string
+		expectedSQL   string
+		expectedPaths []string
+		expectedLocal bool
+	}{
+		{
+			name:          "simple local copy",
+			query:         "COPY t1 FROM LOCAL '/tmp/f1.csv' DELIMITER ',';",
+			expectedSQL:   "COPY t1 FROM STDIN DELIMITER ',';",
+			expectedPaths: []string{"/tmp/f1.csv"},
+			expectedLocal: true,
+		},
+		{
+			name:          "tabs around local",
+			query:         "COPY t1 FROM\tLOCAL\t'/tmp/f1.csv' DELIMITER ',';",
+			expectedSQL:   "COPY t1 FROM STDIN DELIMITER ',';",
+			expectedPaths: []string{"/tmp/f1.csv"},
+			expectedLocal: true,
+		},
+		{
+			name:          "block comment between from local",
+			query:         "COPY t1 FROM /*note*/ LOCAL '/tmp/f1.csv' DELIMITER ',';",
+			expectedSQL:   "COPY t1 FROM STDIN DELIMITER ',';",
+			expectedPaths: []string{"/tmp/f1.csv"},
+			expectedLocal: true,
+		},
+		{
+			name:          "line comment between from local",
+			query:         "COPY t1 FROM --note\nLOCAL '/tmp/f1.csv' DELIMITER ',';",
+			expectedSQL:   "COPY t1 FROM STDIN DELIMITER ',';",
+			expectedPaths: []string{"/tmp/f1.csv"},
+			expectedLocal: true,
+		},
+		{
+			name: "multiple local files",
+			query: "COPY local_file_tests FROM LOCAL '/home/release/siva/mountains.json', "+
+				"'/home/release/siva/mountains1.json' PARSER FJSONPARSER() REJECTED DATA AS TABLE local_file_tests_rejects;",
+			expectedSQL: "COPY local_file_tests FROM STDIN PARSER FJSONPARSER() "+
+				"REJECTED DATA AS TABLE local_file_tests_rejects;",
+			expectedPaths: []string{"/home/release/siva/mountains.json", "/home/release/siva/mountains1.json"},
+			expectedLocal: true,
+		},
+		{
+			name:          "multiple local files avro is rejected",
+			query:         "COPY t1 FROM LOCAL '/tmp/f1.avro', '/tmp/f2.avro' PARSER FAVROPARSER();",
+			expectedSQL:   "COPY t1 FROM LOCAL '/tmp/f1.avro', '/tmp/f2.avro' PARSER FAVROPARSER();",
+			expectedPaths: nil,
+			expectedLocal: false,
+		},
+		{
+			name:          "multiple local files gzip is rejected",
+			query:         "COPY t1 FROM LOCAL '/tmp/f1.csv.gz', '/tmp/f2.csv.gz' GZIP DELIMITER ',';",
+			expectedSQL:   "COPY t1 FROM LOCAL '/tmp/f1.csv.gz', '/tmp/f2.csv.gz' GZIP DELIMITER ',';",
+			expectedPaths: nil,
+			expectedLocal: false,
+		},
+		{
+			name:          "single local file avro is allowed",
+			query:         "COPY t1 FROM LOCAL '/tmp/f1.avro' PARSER FAVROPARSER();",
+			expectedSQL:   "COPY t1 FROM STDIN PARSER FAVROPARSER();",
+			expectedPaths: []string{"/tmp/f1.avro"},
+			expectedLocal: true,
+		},
+		{
+			name:          "preserve comment between list and clause",
+			query:         "COPY t1 FROM LOCAL '/tmp/f1.csv' /*after*/ DELIMITER ',';",
+			expectedSQL:   "COPY t1 FROM STDIN /*after*/ DELIMITER ',';",
+			expectedPaths: []string{"/tmp/f1.csv"},
+			expectedLocal: true,
+		},
+		{
+			name:          "non local copy statement",
+			query:         "SELECT 1;",
+			expectedSQL:   "SELECT 1;",
+			expectedPaths: nil,
+			expectedLocal: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			rewritten, paths, isLocal := rewriteLocalCopyToSTDIN(tc.query)
+			if isLocal != tc.expectedLocal {
+				t.Fatalf("expected isLocal=%v got %v", tc.expectedLocal, isLocal)
+			}
+			if rewritten != tc.expectedSQL {
+				t.Fatalf("expected SQL %q got %q", tc.expectedSQL, rewritten)
+			}
+			if len(paths) != len(tc.expectedPaths) {
+				t.Fatalf("expected %d paths got %d", len(tc.expectedPaths), len(paths))
+			}
+			for i := range paths {
+				if paths[i] != tc.expectedPaths[i] {
+					t.Fatalf("path[%d] expected %q got %q", i, tc.expectedPaths[i], paths[i])
+				}
+			}
+		})
+	}
+}
+
 func TestMergeRowSets(t *testing.T) {
 	single := newEmptyRows()
 	multiA := newEmptyRows()
