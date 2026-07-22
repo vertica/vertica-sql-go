@@ -384,6 +384,27 @@ func TestRewriteLocalCopyToSTDINVariants(t *testing.T) {
 			expectedLocal: true,
 		},
 		{
+			name:          "multiple local files avro is rejected",
+			query:         "COPY t1 FROM LOCAL '/tmp/f1.avro', '/tmp/f2.avro' PARSER FAVROPARSER();",
+			expectedSQL:   "COPY t1 FROM LOCAL '/tmp/f1.avro', '/tmp/f2.avro' PARSER FAVROPARSER();",
+			expectedPaths: nil,
+			expectedLocal: false,
+		},
+		{
+			name:          "multiple local files gzip is rejected",
+			query:         "COPY t1 FROM LOCAL '/tmp/f1.csv.gz', '/tmp/f2.csv.gz' GZIP DELIMITER ',';",
+			expectedSQL:   "COPY t1 FROM LOCAL '/tmp/f1.csv.gz', '/tmp/f2.csv.gz' GZIP DELIMITER ',';",
+			expectedPaths: nil,
+			expectedLocal: false,
+		},
+		{
+			name:          "single local file avro is allowed",
+			query:         "COPY t1 FROM LOCAL '/tmp/f1.avro' PARSER FAVROPARSER();",
+			expectedSQL:   "COPY t1 FROM STDIN PARSER FAVROPARSER();",
+			expectedPaths: []string{"/tmp/f1.avro"},
+			expectedLocal: true,
+		},
+		{
 			name:          "preserve comment between list and clause",
 			query:         "COPY t1 FROM LOCAL '/tmp/f1.csv' /*after*/ DELIMITER ',';",
 			expectedSQL:   "COPY t1 FROM STDIN /*after*/ DELIMITER ',';",

@@ -1404,6 +1404,13 @@ func TestLocalCopyCSVMultipleFilesMissingFile(t *testing.T) {
 	)
 	_, err = connDB.ExecContext(ctx, copySQL)
 	assertErr(t, err, "no such file or directory")
+	
+	// Verify connection is still usable after error
+	// drainUntilReady() should have restored protocol state
+	var result int
+	err = connDB.QueryRowContext(ctx, "SELECT 1").Scan(&result)
+	assertNoErr(t, err)
+	assertEqual(t, result, 1)
 }
 
 func TestLocalCopyCSVMultipleFilesSchemaMismatch(t *testing.T) {
@@ -1425,6 +1432,13 @@ func TestLocalCopyCSVMultipleFilesSchemaMismatch(t *testing.T) {
 	)
 	_, err = connDB.ExecContext(ctx, copySQL)
 	assertTrue(t, err != nil)
+	
+	// Verify connection is still usable after error
+	// drainUntilReady() should have restored protocol state
+	var result int
+	err = connDB.QueryRowContext(ctx, "SELECT 1").Scan(&result)
+	assertNoErr(t, err)
+	assertEqual(t, result, 1)
 }
 
 func assertCopyCSVValues(t *testing.T, connDB *sql.DB) {

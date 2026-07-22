@@ -895,9 +895,38 @@ func analyzeLocalCopyStatement(statement string) (localCopyAnalysis, bool) {
 	return analysis, true
 }
 
+// isBinaryOrCompressedFormat checks if the COPY statement uses a format
+// that cannot safely concatenate multiple files with newline delimiters.
+// Binary and compressed formats (Avro, Parquet, ORC, GZIP, BZIP2) require
+// native file boundary handling and cannot be safely merged as text streams.
+func isBinaryOrCompressedFormat(statement string) bool {
+	lowerStmt := strings.ToUpper(statement)
+	binaryFormats := []string{
+		"PARQUET", "ORC", "AVRO",
+	}
+	for _, format := range binaryFormats {
+		if strings.Contains(lowerStmt, format) {
+			return true
+		}
+	}
+	// Check for compression hints
+	compressors := []string{"GZIP", "BZIP2", "BZIP", "ZSTD"}
+	for _, comp := range compressors {
+		if strings.Contains(lowerStmt, comp) {
+			return true
+		}
+	}
+	return false
+}
+
 func rewriteLocalCopyToSTDIN(statement string) (string, []string, bool) {
 	analysis, ok := analyzeLocalCopyStatement(statement)
 	if !ok {
+		return statement, nil, false
+	}
+	// Multi-file LOCAL COPY is only safe for text-based formats (CSV, JSON, TSV, etc.)
+	// Binary and compressed formats require native file boundary handling.
+	if len(analysis.paths) > 1 && isBinaryOrCompressedFormat(statement) {
 		return statement, nil, false
 	}
 	// Keep the original suffix exactly as-is (including spacing/comments) to
