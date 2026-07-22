@@ -8,7 +8,8 @@ vertica-sql-go is a native Go adapter for the Vertica (http://www.vertica.com) d
 
 Please check out [release notes](https://github.com/vertica/vertica-sql-go/releases) to learn about the latest improvements.
 
-vertica-sql-go has been tested with Vertica 24.4.0 and Go 1.18/1.19/1.20/1.21/1.22.
+vertica-sql-go has been tested with Vertica 24.4.0. The minimum supported Go version is 1.18.
+CI currently tests Go 1.18/1.19/1.20/1.21/1.22/1.26. The latest validated patch version is Go 1.26.5.
 
 ## Installation
 
