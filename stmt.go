@@ -33,6 +33,7 @@ package vertigo
 // THE SOFTWARE.
 
 import (
+	"bytes"
 	"context"
 	"database/sql/driver"
 	"errors"
@@ -45,6 +46,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/vertica/vertica-sql-go/common"
 	"github.com/vertica/vertica-sql-go/logger"
@@ -55,7 +57,6 @@ import (
 var (
 	stmtLogger        = logger.New("stmt")
 	emailRegexPattern = regexp.MustCompile(`[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
-	copyLocalRegex    = regexp.MustCompile(`(?is)\bFROM\s+LOCAL\s+'((?:''|[^'])*)'`)
 )
 
 type parseState int
@@ -318,27 +319,26 @@ func (s *stmt) QueryContextRaw(ctx context.Context, baseArgs []driver.NamedValue
 	for _, statementSQL := range statements {
 		execSQL := statementSQL
 		execCtx := ctx
-		var localFile *os.File
+		var localFiles []*os.File
 
-		if rewrittenSQL, localPath, isLocal := rewriteLocalCopyToSTDIN(statementSQL); isLocal {
+		if rewrittenSQL, localPaths, isLocal := rewriteLocalCopyToSTDIN(statementSQL); isLocal {
 			execSQL = rewrittenSQL
-			localFile, err = os.Open(filepath.Clean(localPath))
-			if err != nil {
-				return newEmptyRows(), err
+			var openErr error
+			localFiles, openErr = openLocalCopyFiles(localPaths)
+			if openErr != nil {
+				return newEmptyRows(), openErr
 			}
 
 			vCtx := NewVerticaContext(ctx)
 			if parentCtx, ok := ctx.(VerticaContext); ok {
 				_ = vCtx.SetCopyBlockSizeBytes(parentCtx.GetCopyBlockSizeBytes())
 			}
-			_ = vCtx.SetCopyInputStream(localFile)
+			_ = vCtx.SetCopyInputStream(multiReaderFromFiles(localFiles))
 			execCtx = vCtx
 		}
 
 		resultSet, runErr := s.runSimpleStatement(execCtx, execSQL)
-		if localFile != nil {
-			_ = localFile.Close()
-		}
+		closeLocalCopyFiles(localFiles)
 		if runErr != nil {
 			return newEmptyRows(), runErr
 		}
@@ -390,7 +390,10 @@ func (s *stmt) verifyLocalFiles(msg *msgs.BEVerifyLoadFilesMsg) error {
 		fileSizes[idx] = uint64(fileInfo.Size())
 	}
 
-	return s.conn.sendMessage(&msgs.FEVerifyLoadFiles{FileNames: msg.FileList, FileSizes: fileSizes})
+	return s.conn.sendMessage(&msgs.FEVerifyLoadFiles{
+		FileNames: msg.FileList,
+		FileSizes: fileSizes,
+	})
 }
 
 func (s *stmt) copyLocalFile(ctx context.Context, fileName string) error {
@@ -459,6 +462,9 @@ func (s *stmt) runSimpleStatement(ctx context.Context, sql string) (*rows, error
 		case *msgs.BECmdCompleteMsg, *msgs.BEParseCompleteMsg:
 			continue
 		case *msgs.BEErrorMsg:
+			if drainErr := s.conn.drainUntilReady(); drainErr != nil {
+				return newEmptyRows(), drainErr
+			}
 			return newEmptyRows(), s.evaluateErrorMsg(msg)
 		case *msgs.BEEmptyQueryResponseMsg:
 			return newEmptyRows(), nil
@@ -580,26 +586,348 @@ func (s *stmt) evaluateErrorMsg(msg *msgs.BEErrorMsg) error {
 	return errorMsgToVError(msg)
 }
 
-func rewriteLocalCopyToSTDIN(statement string) (string, string, bool) {
-	match := copyLocalRegex.FindStringSubmatchIndex(statement)
-	if len(match) < 4 {
-		return statement, "", false
-	}
-
-	localPath := statement[match[2]:match[3]]
-	localPath = strings.ReplaceAll(localPath, "''", "'")
-	rewritten := statement[:match[0]] + "FROM STDIN" + statement[match[1]:]
-
-	return rewritten, localPath, true
-}
-
 // isLocalCopyStatement reports whether the statement is a COPY ... FROM LOCAL ...
 // command. Such statements must use the simple query protocol because the server
 // enters the GetLocalFileInfo state immediately after FEExecuteMsg is processed,
 // making the trailing FEFlushMsg sent by bindAndExecute invalid in that state.
 func (s *stmt) isLocalCopyStatement() bool {
-	upper := strings.ToUpper(strings.TrimSpace(s.command))
-	return strings.HasPrefix(upper, "COPY") && strings.Contains(upper, "FROM LOCAL")
+	statements := parse.SplitStatements(s.command)
+	if len(statements) != 1 {
+		return false
+	}
+	_, ok := analyzeLocalCopyStatement(statements[0])
+	return ok
+}
+
+func openLocalCopyFiles(paths []string) ([]*os.File, error) {
+	files := make([]*os.File, 0, len(paths))
+	for _, localPath := range paths {
+		localFile, openErr := os.Open(filepath.Clean(localPath))
+		if openErr != nil {
+			closeLocalCopyFiles(files)
+			return nil, openErr
+		}
+		files = append(files, localFile)
+	}
+	return files, nil
+}
+
+func closeLocalCopyFiles(files []*os.File) {
+	for _, localFile := range files {
+		_ = localFile.Close()
+	}
+}
+
+func multiReaderFromFiles(files []*os.File) io.Reader {
+	if len(files) == 1 {
+		return files[0]
+	}
+	// Rewriting LOCAL file lists to a single STDIN stream loses the server's
+	// native file boundary handling. Reinsert a line break only when a source
+	// file does not already end with one so adjacent text records do not merge.
+	readers := make([]io.Reader, 0, len(files)*2)
+	for idx, localFile := range files {
+		readers = append(readers, localFile)
+		if idx < len(files)-1 && fileNeedsTrailingNewline(localFile) {
+			readers = append(readers, bytes.NewReader([]byte{'\n'}))
+		}
+	}
+	return io.MultiReader(readers...)
+}
+
+func fileNeedsTrailingNewline(fileHandle *os.File) bool {
+	fileInfo, err := fileHandle.Stat()
+	if err != nil || fileInfo.Size() == 0 {
+		return false
+	}
+
+	lastByte := []byte{0}
+	if _, err = fileHandle.ReadAt(lastByte, fileInfo.Size()-1); err != nil {
+		return false
+	}
+
+	return lastByte[0] != '\n' && lastByte[0] != '\r'
+}
+
+type sqlToken struct {
+	text  string
+	start int
+	end   int
+}
+
+type localCopyAnalysis struct {
+	fromStart   int
+	suffixStart int
+	paths       []string
+}
+
+func topLevelSQLTokens(statement string) []sqlToken {
+	tokens := make([]sqlToken, 0, 16)
+	var current strings.Builder
+	tokenStart := -1
+	// Tokenize only top-level SQL words and ignore quoted/commented regions so
+	// keywords inside literals/comments do not affect LOCAL COPY detection.
+	flushCurrent := func() {
+		if current.Len() == 0 {
+			return
+		}
+		tokens = append(tokens, sqlToken{text: strings.ToUpper(current.String()), start: tokenStart, end: tokenStart + current.Len()})
+		current.Reset()
+		tokenStart = -1
+	}
+
+	inSingleQuote := false
+	inDoubleQuote := false
+	inLineComment := false
+	inBlockComment := false
+	dollarTag := ""
+
+	for i := 0; i < len(statement); i++ {
+		ch := statement[i]
+
+		if inLineComment {
+			if ch == '\n' || ch == '\r' {
+				inLineComment = false
+			}
+			continue
+		}
+
+		if inBlockComment {
+			if ch == '*' && i+1 < len(statement) && statement[i+1] == '/' {
+				i++
+				inBlockComment = false
+			}
+			continue
+		}
+
+		if inSingleQuote {
+			if ch == '\'' {
+				if i+1 < len(statement) && statement[i+1] == '\'' {
+					i++
+					continue
+				}
+				inSingleQuote = false
+			}
+			continue
+		}
+
+		if inDoubleQuote {
+			if ch == '"' {
+				if i+1 < len(statement) && statement[i+1] == '"' {
+					i++
+					continue
+				}
+				inDoubleQuote = false
+			}
+			continue
+		}
+
+		if dollarTag != "" {
+			if i+len(dollarTag) <= len(statement) && statement[i:i+len(dollarTag)] == dollarTag {
+				i += len(dollarTag) - 1
+				dollarTag = ""
+			}
+			continue
+		}
+
+		if ch == '\'' {
+			flushCurrent()
+			inSingleQuote = true
+			continue
+		}
+
+		if ch == '"' {
+			flushCurrent()
+			inDoubleQuote = true
+			continue
+		}
+
+		if ch == '-' && i+1 < len(statement) && statement[i+1] == '-' {
+			flushCurrent()
+			i++
+			inLineComment = true
+			continue
+		}
+
+		if ch == '/' && i+1 < len(statement) {
+			next := statement[i+1]
+			if next == '*' {
+				flushCurrent()
+				i++
+				inBlockComment = true
+				continue
+			}
+			if next == '/' {
+				flushCurrent()
+				i++
+				inLineComment = true
+				continue
+			}
+		}
+
+		if ch == '$' {
+			if tag, length, ok := readDollarTag(statement, i); ok {
+				flushCurrent()
+				dollarTag = tag
+				i += length - 1
+				continue
+			}
+		}
+
+		if (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+			(ch >= '0' && ch <= '9') || ch == '_' {
+			if tokenStart < 0 {
+				tokenStart = i
+			}
+			current.WriteByte(ch)
+			continue
+		}
+
+		flushCurrent()
+	}
+
+	flushCurrent()
+	return tokens
+}
+
+func skipSQLTrivia(statement string, pos int) int {
+	for pos < len(statement) {
+		ch := statement[pos]
+		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\f' {
+			pos++
+			continue
+		}
+
+		if ch == '-' && pos+1 < len(statement) && statement[pos+1] == '-' {
+			pos += 2
+			for pos < len(statement) && statement[pos] != '\n' && statement[pos] != '\r' {
+				pos++
+			}
+			continue
+		}
+
+		if ch == '/' && pos+1 < len(statement) && statement[pos+1] == '*' {
+			pos += 2
+			for pos+1 < len(statement) {
+				if statement[pos] == '*' && statement[pos+1] == '/' {
+					pos += 2
+					break
+				}
+				pos++
+			}
+			continue
+		}
+
+		break
+	}
+
+	return pos
+}
+
+func parseQuotedLocalPath(statement string, pos int) (string, int, bool) {
+	if pos >= len(statement) || statement[pos] != '\'' {
+		return "", pos, false
+	}
+
+	pos++
+	var raw strings.Builder
+	for pos < len(statement) {
+		ch := statement[pos]
+		if ch == '\'' {
+			if pos+1 < len(statement) && statement[pos+1] == '\'' {
+				raw.WriteByte('\'')
+				pos += 2
+				continue
+			}
+			pos++
+			return raw.String(), pos, true
+		}
+		raw.WriteByte(ch)
+		pos++
+	}
+
+	return "", pos, false
+}
+
+func analyzeLocalCopyStatement(statement string) (localCopyAnalysis, bool) {
+	tokens := topLevelSQLTokens(statement)
+	if len(tokens) == 0 || tokens[0].text != "COPY" {
+		return localCopyAnalysis{}, false
+	}
+
+	fromLocalIdx := -1
+	for i := 1; i+1 < len(tokens); i++ {
+		if tokens[i].text == "FROM" && tokens[i+1].text == "LOCAL" {
+			fromLocalIdx = i
+			break
+		}
+	}
+	if fromLocalIdx < 0 {
+		return localCopyAnalysis{}, false
+	}
+
+	analysis := localCopyAnalysis{fromStart: tokens[fromLocalIdx].start, paths: make([]string, 0, 1)}
+	pos := skipSQLTrivia(statement, tokens[fromLocalIdx+1].end)
+
+	for {
+		// Vertica LOCAL paths are SQL single-quoted literals. We parse one path,
+		// then continue parsing comma-separated path literals if present.
+		path, nextPos, ok := parseQuotedLocalPath(statement, pos)
+		if !ok {
+			return localCopyAnalysis{}, false
+		}
+		analysis.paths = append(analysis.paths, path)
+		analysis.suffixStart = nextPos
+
+		pos = skipSQLTrivia(statement, nextPos)
+		if pos < len(statement) && statement[pos] == ',' {
+			pos++
+			pos = skipSQLTrivia(statement, pos)
+			continue
+		}
+		break
+	}
+
+	if len(analysis.paths) == 0 {
+		return localCopyAnalysis{}, false
+	}
+
+	return analysis, true
+}
+
+func rewriteLocalCopyToSTDIN(statement string) (string, []string, bool) {
+	analysis, ok := analyzeLocalCopyStatement(statement)
+	if !ok {
+		return statement, nil, false
+	}
+	// Keep the original suffix exactly as-is (including spacing/comments) to
+	// avoid collapsing tokens such as STDINPARSER or STDINDELIMITER.
+	rewritten := statement[:analysis.fromStart] + "FROM STDIN" + statement[analysis.suffixStart:]
+	return rewritten, analysis.paths, true
+}
+
+func readDollarTag(query string, start int) (string, int, bool) {
+	if query[start] != '$' {
+		return "", 0, false
+	}
+
+	end := start + 1
+	for end < len(query) {
+		r := rune(query[end])
+		if query[end] == '$' {
+			return query[start : end+1], end + 1 - start, true
+		}
+		if !isDollarTagRune(r) {
+			break
+		}
+		end++
+	}
+
+	return "", 0, false
+}
+
+func isDollarTagRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
 }
 
 func (s *stmt) prepareAndDescribe() error {

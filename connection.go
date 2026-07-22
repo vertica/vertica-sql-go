@@ -837,6 +837,21 @@ func (v *connection) sync() error {
 	return nil
 }
 
+func (v *connection) drainUntilReady() error {
+	for {
+		bem, err := v.recvMessage()
+		if err != nil {
+			return err
+		}
+
+		if _, ok := bem.(*msgs.BEReadyForQueryMsg); ok {
+			return nil
+		}
+
+		_, _ = v.defaultMessageHandler(bem)
+	}
+}
+
 func (v *connection) LastNotice() string {
     return v.lastNotice
 }
