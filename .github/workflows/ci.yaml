@@ -113,6 +113,15 @@ jobs:
             --from-literal=secretkey="minioadmin"
           kubectl get secret communal-creds -n my-verticadb-operator -o yaml || true
 
+      # Create Vertica License Secret from GitHub Secret
+      - name: Create Vertica License Secret
+        run: |
+          echo "${{ secrets.VERTICA_LICENSE }}" | base64 -d > /tmp/license.dat
+          kubectl create secret generic vertica-license \
+            -n my-verticadb-operator \
+            --from-file=license.dat=/tmp/license.dat
+          rm -f /tmp/license.dat
+
       # Install Vertica Operator
       - name: Install Vertica Operator
         run: |
@@ -141,6 +150,7 @@ jobs:
           spec:
             image: opentext/vertica-k8s:latest
             dbName: vdb
+            licenseSecret: vertica-license
             initPolicy: Create
             communal:
               path: s3://vertica-fleeting/mkottakota/
@@ -372,11 +382,40 @@ jobs:
           "
           kubectl -n ${NS} delete pod go-test-runner --ignore-not-found=true
 
-      # Cleanup MinIO
-      - name: Uninstall MinIO
+      # Cleanup all Kubernetes resources and license artifacts
+      - name: Cleanup Kubernetes resources
         if: always()
         run: |
-          kubectl delete pod minio -n minio --ignore-not-found || true
-          kubectl delete svc minio -n minio --ignore-not-found || true
-          kubectl delete ns minio || true
-          echo "MinIO cleanup complete"
+          echo "Starting cleanup..."
+
+          echo "Deleting Go test runner pod..."
+          kubectl -n my-verticadb-operator delete pod go-test-runner --ignore-not-found || true
+
+          echo "Deleting Vertica license secret..."
+          kubectl -n my-verticadb-operator delete secret vertica-license --ignore-not-found || true
+
+          echo "Deleting Keycloak resources..."
+          kubectl delete deployment keycloak -n keycloak --ignore-not-found || true
+          kubectl delete service keycloak -n keycloak --ignore-not-found || true
+          kubectl delete ns keycloak --ignore-not-found || true
+
+          echo "Deleting VerticaDB and Operator..."
+          kubectl delete verticadb verticadb-sample -n my-verticadb-operator --ignore-not-found || true
+          helm uninstall vdb-op -n my-verticadb-operator || true
+          kubectl delete ns my-verticadb-operator --ignore-not-found || true
+
+          echo "Deleting MinIO..."
+          kubectl delete -f minio.yaml --ignore-not-found || true
+          kubectl delete ns minio --ignore-not-found || true
+
+          echo "Removing local license file..."
+          rm -f /tmp/license.dat
+
+          echo "Kubernetes resources cleanup done."
+
+      - name: Delete KinD cluster
+        if: always()
+        run: |
+          echo "Deleting KinD cluster..."
+          kind delete cluster --name vertica-ci || true
+          echo "KinD cluster removed successfully"
