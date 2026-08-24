@@ -178,7 +178,21 @@ jobs:
           for i in {1..30}; do
             kubectl get pod ${POD} -n ${NS} && break || sleep 10
           done
-          kubectl wait --for=condition=Ready pod/${POD} -n ${NS} --timeout=5m || true
+
+          echo "Waiting for VerticaDB to be initialized..."
+          kubectl wait --for=condition=DBInitialized=True verticadb/verticadb-sample \
+            -n ${NS} --timeout=15m || true
+
+          echo "Waiting for Vertica pod to be Ready..."
+          if ! kubectl wait --for=condition=Ready pod/${POD} -n ${NS} --timeout=15m; then
+            echo "Vertica pod did not become Ready. Collecting diagnostics..."
+            kubectl get verticadb verticadb-sample -n ${NS} -o yaml || true
+            kubectl get pods -n ${NS} -o wide || true
+            kubectl describe pod ${POD} -n ${NS} || true
+            kubectl logs ${POD} -n ${NS} -c server --tail=100 || true
+            kubectl -n ${NS} logs -l app.kubernetes.io/name=verticadb-operator --tail=100 || true
+            exit 1
+          fi
 
       # Deploy Keycloak in K8s
       - name: Deploy Keycloak
