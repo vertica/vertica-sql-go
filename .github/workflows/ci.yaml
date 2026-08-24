@@ -203,34 +203,10 @@ jobs:
           NS=my-verticadb-operator
           SS=verticadb-sample-defaultsubcluster
           POD=${SS}-0
-
-          echo "Waiting for Vertica pod to be Ready (polling with diagnostics)..."
-          DEADLINE=$((SECONDS + 1200))   # 20 minutes
-          while [ $SECONDS -lt $DEADLINE ]; do
-            PHASE=$(kubectl get pod ${POD} -n ${NS} -o jsonpath='{.status.phase}' 2>/dev/null || true)
-            READY=$(kubectl get pod ${POD} -n ${NS} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
-            echo "[$(date -u +%H:%M:%S)] pod=${POD} phase=${PHASE:-<none>} ready=${READY:-<none>}"
-
-            if [ "${READY}" = "True" ]; then
-              echo "Vertica pod is Ready."
-              kubectl get pods -n ${NS} -o wide || true
-              exit 0
-            fi
-
-            # Surface why the pod can't start
-            kubectl get pods -n ${NS} -o wide || true
-            echo "--- Recent pod events ---"
-            kubectl get events -n ${NS} --sort-by=.lastTimestamp 2>/dev/null | tail -15 || true
-            sleep 20
+          for i in {1..30}; do
+            kubectl get pod ${POD} -n ${NS} && break || sleep 10
           done
-
-          echo "Vertica pod did not become Ready in time. Collecting full diagnostics..."
-          kubectl get verticadb verticadb-sample -n ${NS} -o yaml || true
-          kubectl get pods -n ${NS} -o wide || true
-          kubectl describe pod ${POD} -n ${NS} || true
-          kubectl logs ${POD} -n ${NS} -c server --tail=100 || true
-          kubectl -n ${NS} logs -l app.kubernetes.io/name=verticadb-operator --tail=100 || true
-          exit 1
+          kubectl wait --for=condition=Ready pod/${POD} -n ${NS} --timeout=5m || true
 
       # Deploy Keycloak in K8s
       - name: Deploy Keycloak
@@ -436,40 +412,13 @@ jobs:
           "
           kubectl -n ${NS} delete pod go-test-runner --ignore-not-found=true
 
-      # Cleanup all Kubernetes resources and license artifacts
-      - name: Cleanup Kubernetes resources
+      # Cleanup MinIO and license artifacts
+      - name: Uninstall MinIO
         if: always()
         run: |
-          echo "Starting cleanup..."
-
-          echo "Deleting Go test runner pod..."
-          kubectl -n my-verticadb-operator delete pod go-test-runner --ignore-not-found || true
-
-          echo "Deleting Vertica license secret..."
           kubectl -n my-verticadb-operator delete secret vertica-license --ignore-not-found || true
-
-          echo "Deleting Keycloak resources..."
-          kubectl delete deployment keycloak -n keycloak --ignore-not-found || true
-          kubectl delete service keycloak -n keycloak --ignore-not-found || true
-          kubectl delete ns keycloak --ignore-not-found || true
-
-          echo "Deleting VerticaDB and Operator..."
-          kubectl delete verticadb verticadb-sample -n my-verticadb-operator --ignore-not-found || true
-          helm uninstall vdb-op -n my-verticadb-operator || true
-          kubectl delete ns my-verticadb-operator --ignore-not-found || true
-
-          echo "Deleting MinIO..."
-          kubectl delete -f minio.yaml --ignore-not-found || true
-          kubectl delete ns minio --ignore-not-found || true
-
-          echo "Removing local license file..."
           rm -f /tmp/license.dat
-
-          echo "Kubernetes resources cleanup done."
-
-      - name: Delete KinD cluster
-        if: always()
-        run: |
-          echo "Deleting KinD cluster..."
-          kind delete cluster --name vertica-ci || true
-          echo "KinD cluster removed successfully"
+          kubectl delete pod minio -n minio --ignore-not-found || true
+          kubectl delete svc minio -n minio --ignore-not-found || true
+          kubectl delete ns minio || true
+          echo "MinIO cleanup complete"
