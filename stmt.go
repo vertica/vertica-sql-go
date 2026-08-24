@@ -81,13 +81,22 @@ type stmt struct {
 	multiStatements bool
 }
 
-
 func newStmt(connection *connection, command string) (*stmt, error) {
 	s := &stmt{
 		conn:         connection,
 		command:      command,
 		preparedName: fmt.Sprintf("S%d%d%d", os.Getpid(), time.Now().Unix(), rand.Int31()),
 		parseState:   parseStateUnparsed,
+	}
+
+	// Check if this is a UDSF statement that should be treated as an atomic unit.
+	// UDSF statements (CREATE/ALTER/DROP FUNCTION, GRANT/REVOKE) contain bodies or
+	// complex privilege specifications that must not be split by the statement splitter.
+	analyzer := NewUDSFAnalyzer()
+	if analyzer.IsUDSFStatement(command) {
+		// UDSF statement: treat as single statement, no splitting
+		s.multiStatements = false
+		return s, nil
 	}
 
 	initialStatements := parse.SplitStatements(command)
@@ -308,6 +317,18 @@ func (s *stmt) QueryContextRaw(ctx context.Context, baseArgs []driver.NamedValue
 	interpolated, err := s.interpolate(args)
 	if err != nil {
 		return newEmptyRows(), err
+	}
+
+	// UDSF statements (CREATE/ALTER/DROP FUNCTION, GRANT/REVOKE) contain
+	// BEGIN...END blocks with internal semicolons; bypass splitting so the
+	// whole statement is sent to Vertica as a single atomic unit.
+	udsfAnalyzer := NewUDSFAnalyzer()
+	if udsfAnalyzer.IsUDSFStatement(interpolated) {
+		resultSet, runErr := s.runSimpleStatement(ctx, strings.TrimSpace(interpolated))
+		if runErr != nil {
+			return newEmptyRows(), runErr
+		}
+		return resultSet, nil
 	}
 
 	statements := parse.SplitStatements(interpolated)
@@ -587,14 +608,22 @@ func (s *stmt) evaluateErrorMsg(msg *msgs.BEErrorMsg) error {
 }
 
 // isLocalCopyStatement reports whether the statement is a COPY ... FROM LOCAL ...
-// command. Such statements must use the simple query protocol because the server
-// enters the GetLocalFileInfo state immediately after FEExecuteMsg is processed,
-// making the trailing FEFlushMsg sent by bindAndExecute invalid in that state.
+// command or a UDSF statement. Such statements must use the simple query protocol because
+// the server enters special states (GetLocalFileInfo for COPY LOCAL, or function parsing for UDSF)
+// immediately after FEExecuteMsg is processed, making the trailing FEFlushMsg sent by
+// bindAndExecute invalid in those states.
 func (s *stmt) isLocalCopyStatement() bool {
 	statements := parse.SplitStatements(s.command)
 	if len(statements) != 1 {
 		return false
 	}
+
+	// Check if it's a UDSF statement
+	analyzer := NewUDSFAnalyzer()
+	if analyzer.IsUDSFStatement(statements[0]) {
+		return true
+	}
+
 	_, ok := analyzeLocalCopyStatement(statements[0])
 	return ok
 }

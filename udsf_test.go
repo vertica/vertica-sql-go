@@ -50,6 +50,11 @@ func TestUDSFAnalyzer_IsUDSFStatement(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "CREATE OR REPLACE FUNCTION",
+			sql:      "CREATE OR REPLACE FUNCTION my_func() RETURN INT AS BEGIN RETURN 1; END;",
+			expected: true,
+		},
+		{
 			name:     "ALTER FUNCTION",
 			sql:      "ALTER FUNCTION my_func() OWNER TO new_owner",
 			expected: true,
@@ -127,6 +132,11 @@ func TestUDSFAnalyzer_GetStatementType(t *testing.T) {
 		{
 			name:         "CREATE FUNCTION simple",
 			sql:          "CREATE FUNCTION my_func() RETURNS INT",
+			expectedType: UDSFStatementTypeCreateFunction,
+		},
+		{
+			name:         "CREATE OR REPLACE FUNCTION",
+			sql:          "CREATE OR REPLACE FUNCTION my_func() RETURN INT AS BEGIN RETURN 1; END;",
 			expectedType: UDSFStatementTypeCreateFunction,
 		},
 		{

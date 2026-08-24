@@ -49,7 +49,7 @@ func TestUDSFCreateFunctionSimple(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	connDB, err := sql.Open("vertica-sql-go", myDBConnectString)
+	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 	defer connDB.Close()
 
@@ -59,9 +59,10 @@ func TestUDSFCreateFunctionSimple(t *testing.T) {
 
 	// Create a simple function
 	createSQL := `CREATE FUNCTION test_simple_func()
-	RETURNS INT AS
-	'SELECT 1'
-	LANGUAGE SQL`
+	RETURN INT AS
+	BEGIN
+		RETURN 1;
+	END`
 
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
@@ -87,7 +88,7 @@ func TestUDSFCreateFunctionMultiline(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	connDB, err := sql.Open("vertica-sql-go", myDBConnectString)
+	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 	defer connDB.Close()
 
@@ -97,21 +98,15 @@ func TestUDSFCreateFunctionMultiline(t *testing.T) {
 
 	// Create a multi-line function with CASE logic and comments
 	createSQL := `CREATE FUNCTION test_multiline_func(int_param INT)
-	RETURNS INT AS
-	$$
+	RETURN INT AS
 	BEGIN
-	  -- Determine result based on parameter value
-	  CASE
-	    WHEN int_param < 0 THEN
-	      RETURN -1;
-	    WHEN int_param = 0 THEN
-	      RETURN 0;
-	    ELSE
-	      RETURN 1;
-	  END CASE;
-	END;
-	$$
-	LANGUAGE PLPGSQL`
+		-- Determine result based on parameter value
+		RETURN (CASE
+			WHEN int_param < 0 THEN -1
+			WHEN int_param = 0 THEN 0
+			ELSE 1
+		END);
+	END`
 
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
@@ -148,7 +143,7 @@ func TestUDSFCreateFunctionWithSemicolonsInStrings(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	connDB, err := sql.Open("vertica-sql-go", myDBConnectString)
+	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 	defer connDB.Close()
 
@@ -158,9 +153,10 @@ func TestUDSFCreateFunctionWithSemicolonsInStrings(t *testing.T) {
 
 	// Create a function with embedded semicolons in strings
 	createSQL := `CREATE FUNCTION test_semicolon_func()
-	RETURNS VARCHAR AS
-	'SELECT ''value with; semicolon; inside'''
-	LANGUAGE SQL`
+	RETURN VARCHAR AS
+	BEGIN
+		RETURN 'value with; semicolon; inside';
+	END`
 
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
@@ -186,7 +182,7 @@ func TestUDSFCreateFunctionWithDollarQuoting(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	connDB, err := sql.Open("vertica-sql-go", myDBConnectString)
+	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 	defer connDB.Close()
 
@@ -196,15 +192,14 @@ func TestUDSFCreateFunctionWithDollarQuoting(t *testing.T) {
 
 	// Create a function with dollar-quoted body
 	createSQL := `CREATE FUNCTION test_dollar_func(int_param INT)
-	RETURNS INT AS
-	$tag$
-	SELECT CASE
-	  WHEN int_param < 0 THEN -1;
-	  WHEN int_param = 0 THEN 0;
-	  ELSE 1
-	END;
-	$tag$
-	LANGUAGE SQL`
+	RETURN INT AS
+	BEGIN
+		RETURN (CASE
+			WHEN int_param < 0 THEN -1
+			WHEN int_param = 0 THEN 0
+			ELSE 1
+		END);
+	END`
 
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
@@ -229,22 +224,28 @@ func TestUDSFAlterFunction(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	connDB, err := sql.Open("vertica-sql-go", myDBConnectString)
+	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 	defer connDB.Close()
 
 	// Clean up and create a function to alter
 	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_alter_func()`)
 	createSQL := `CREATE FUNCTION test_alter_func()
-	RETURNS INT AS
-	'SELECT 42'
-	LANGUAGE SQL`
+	RETURN INT AS
+	BEGIN
+		RETURN 42;
+	END`
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
 
-	// Alter the function
-	alterSQL := `ALTER FUNCTION test_alter_func() IMMUTABLE`
+	// Rename the function to verify ALTER FUNCTION executes as an atomic unit
+	alterSQL := `ALTER FUNCTION test_alter_func() RENAME TO test_alter_func_v2`
 	_, err = connDB.ExecContext(ctx, alterSQL)
+	assertNoErr(t, err)
+
+	// Rename back so the verification query and cleanup use the original name
+	renameBackSQL := `ALTER FUNCTION test_alter_func_v2() RENAME TO test_alter_func`
+	_, err = connDB.ExecContext(ctx, renameBackSQL)
 	assertNoErr(t, err)
 
 	// Verify the function still works
@@ -267,15 +268,16 @@ func TestUDSFDropFunction(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	connDB, err := sql.Open("vertica-sql-go", myDBConnectString)
+	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 	defer connDB.Close()
 
 	// Create a function
 	createSQL := `CREATE FUNCTION test_drop_func()
-	RETURNS INT AS
-	'SELECT 1'
-	LANGUAGE SQL`
+	RETURN INT AS
+	BEGIN
+		RETURN 1;
+	END`
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
 
@@ -306,19 +308,21 @@ func TestUDSFGrantExecute(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	connDB, err := sql.Open("vertica-sql-go", myDBConnectString)
+	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 	defer connDB.Close()
 
 	// Create a test role
-	roleSQL := `CREATE ROLE IF NOT EXISTS test_udsf_role`
+	_, _ = connDB.ExecContext(ctx, `DROP ROLE IF EXISTS test_udsf_role`)
+	roleSQL := `CREATE ROLE test_udsf_role`
 	_, _ = connDB.ExecContext(ctx, roleSQL)
 
 	// Create a function
 	createSQL := `CREATE FUNCTION test_grant_func()
-	RETURNS INT AS
-	'SELECT 1'
-	LANGUAGE SQL`
+	RETURN INT AS
+	BEGIN
+		RETURN 1;
+	END`
 	_, _ = connDB.ExecContext(ctx, createSQL)
 
 	// Grant EXECUTE privilege
@@ -342,19 +346,21 @@ func TestUDSFRevokeExecute(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	connDB, err := sql.Open("vertica-sql-go", myDBConnectString)
+	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 	defer connDB.Close()
 
 	// Create a test role
-	roleSQL := `CREATE ROLE IF NOT EXISTS test_udsf_role2`
+	_, _ = connDB.ExecContext(ctx, `DROP ROLE IF EXISTS test_udsf_role2`)
+	roleSQL := `CREATE ROLE test_udsf_role2`
 	_, _ = connDB.ExecContext(ctx, roleSQL)
 
 	// Create a function
 	createSQL := `CREATE FUNCTION test_revoke_func()
-	RETURNS INT AS
-	'SELECT 1'
-	LANGUAGE SQL`
+	RETURN INT AS
+	BEGIN
+		RETURN 1;
+	END`
 	_, _ = connDB.ExecContext(ctx, createSQL)
 
 	// Grant EXECUTE privilege
@@ -381,12 +387,13 @@ func TestUDSFGrantUsageOnSchema(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	connDB, err := sql.Open("vertica-sql-go", myDBConnectString)
+	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 	defer connDB.Close()
 
 	// Create a test role
-	roleSQL := `CREATE ROLE IF NOT EXISTS test_schema_role`
+	_, _ = connDB.ExecContext(ctx, `DROP ROLE IF EXISTS test_schema_role`)
+	roleSQL := `CREATE ROLE test_schema_role`
 	_, _ = connDB.ExecContext(ctx, roleSQL)
 
 	// Create a test schema
@@ -413,12 +420,13 @@ func TestUDSFRevokeUsageOnSchema(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	connDB, err := sql.Open("vertica-sql-go", myDBConnectString)
+	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 	defer connDB.Close()
 
 	// Create a test role
-	roleSQL := `CREATE ROLE IF NOT EXISTS test_schema_role2`
+	_, _ = connDB.ExecContext(ctx, `DROP ROLE IF EXISTS test_schema_role2`)
+	roleSQL := `CREATE ROLE test_schema_role2`
 	_, _ = connDB.ExecContext(ctx, roleSQL)
 
 	// Create a test schema
@@ -449,7 +457,7 @@ func TestUDSFInvokeFunctionInSelect(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	connDB, err := sql.Open("vertica-sql-go", myDBConnectString)
+	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 	defer connDB.Close()
 
@@ -458,9 +466,10 @@ func TestUDSFInvokeFunctionInSelect(t *testing.T) {
 
 	// Create a custom add function emulating a built-in operation
 	createSQL := `CREATE FUNCTION custom_add(a INT, b INT)
-	RETURNS INT AS
-	'SELECT a + b'
-	LANGUAGE SQL`
+	RETURN INT AS
+	BEGIN
+		RETURN (a + b);
+	END`
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
 
@@ -484,15 +493,16 @@ func TestUDSFErrorHandling(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	connDB, err := sql.Open("vertica-sql-go", myDBConnectString)
+	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 	defer connDB.Close()
 
 	// Try to create function with invalid syntax
 	invalidSQL := `CREATE FUNCTION invalid_func()
-	RETURNS INT AS
-	'SELECT * FROM non_existent_table'
-	LANGUAGE SQL`
+	RETURN INT AS
+	BEGIN
+		RETURN (SELECT COUNT(*) FROM non_existent_table_xyz);
+	END`
 
 	_, err = connDB.ExecContext(ctx, invalidSQL)
 	if err == nil {
@@ -516,7 +526,7 @@ func TestUDSFRegressionSelectStatement(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	connDB, err := sql.Open("vertica-sql-go", myDBConnectString)
+	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 	defer connDB.Close()
 
@@ -542,7 +552,7 @@ func TestUDSFRegressionInsertStatement(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	connDB, err := sql.Open("vertica-sql-go", myDBConnectString)
+	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 	defer connDB.Close()
 
@@ -579,7 +589,7 @@ func TestUDSFComplexFunctionWithMultipleParameters(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	connDB, err := sql.Open("vertica-sql-go", myDBConnectString)
+	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 	defer connDB.Close()
 
@@ -588,16 +598,15 @@ func TestUDSFComplexFunctionWithMultipleParameters(t *testing.T) {
 
 	// Create function with multiple parameters
 	createSQL := `CREATE FUNCTION test_multi_param(val1 INT, val2 INT, operation VARCHAR)
-	RETURNS INT AS
-	$$
-	SELECT CASE operation
-	  WHEN 'ADD' THEN val1 + val2
-	  WHEN 'SUB' THEN val1 - val2
-	  WHEN 'MUL' THEN val1 * val2
-	  ELSE 0
-	END;
-	$$
-	LANGUAGE SQL`
+	RETURN INT AS
+	BEGIN
+		RETURN (CASE operation
+			WHEN 'ADD' THEN val1 + val2
+			WHEN 'SUB' THEN val1 - val2
+			WHEN 'MUL' THEN val1 * val2
+			ELSE 0
+		END);
+	END`
 
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
@@ -636,7 +645,7 @@ func TestUDSFQuotedIdentifiers(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	connDB, err := sql.Open("vertica-sql-go", myDBConnectString)
+	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 	defer connDB.Close()
 
@@ -645,9 +654,10 @@ func TestUDSFQuotedIdentifiers(t *testing.T) {
 
 	// Create function with quoted identifier
 	createSQL := `CREATE FUNCTION "MyQuotedFunc"()
-	RETURNS INT AS
-	'SELECT 123'
-	LANGUAGE SQL`
+	RETURN INT AS
+	BEGIN
+		RETURN 123;
+	END`
 
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
@@ -671,7 +681,7 @@ func TestUDSFNullHandling(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	connDB, err := sql.Open("vertica-sql-go", myDBConnectString)
+	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 	defer connDB.Close()
 
@@ -680,14 +690,13 @@ func TestUDSFNullHandling(t *testing.T) {
 
 	// Create function that checks for NULL
 	createSQL := `CREATE FUNCTION test_null_func(val INT)
-	RETURNS VARCHAR AS
-	$$
-	SELECT CASE
-	  WHEN val IS NULL THEN 'NULL'
-	  ELSE 'NOT NULL'
-	END;
-	$$
-	LANGUAGE SQL`
+	RETURN VARCHAR AS
+	BEGIN
+		RETURN (CASE
+			WHEN val IS NULL THEN 'NULL'
+			ELSE 'NOT NULL'
+		END);
+	END`
 
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
@@ -721,7 +730,7 @@ func TestUDSFTransactionHandling(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	connDB, err := sql.Open("vertica-sql-go", myDBConnectString)
+	connDB, err := sql.Open("vertica", myDBConnectString)
 	assertNoErr(t, err)
 	defer connDB.Close()
 
@@ -734,9 +743,10 @@ func TestUDSFTransactionHandling(t *testing.T) {
 
 	// Create function within transaction
 	createSQL := `CREATE FUNCTION test_tx_func()
-	RETURNS INT AS
-	'SELECT 99'
-	LANGUAGE SQL`
+	RETURN INT AS
+	BEGIN
+		RETURN 99;
+	END`
 	_, err = tx.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
 
@@ -752,4 +762,126 @@ func TestUDSFTransactionHandling(t *testing.T) {
 
 	// Clean up
 	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION test_tx_func()`)
+}
+
+// TestUDSFFormattingNewlines verifies UDSF detection and atomic execution when
+// CREATE, ALTER, and DROP statements have leading, trailing, or mid-statement newlines.
+func TestUDSFFormattingNewlines(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	connDB, err := sql.Open("vertica", myDBConnectString)
+	assertNoErr(t, err)
+	defer connDB.Close()
+
+	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_fmt_newline_func()`)
+
+	// Leading and trailing newlines
+	createSQL := "\n\nCREATE FUNCTION test_fmt_newline_func()\n\tRETURN INT AS\n\tBEGIN\n\t\tRETURN 42;\n\tEND\n\n"
+	_, err = connDB.ExecContext(ctx, createSQL)
+	assertNoErr(t, err)
+
+	var result int
+	err = connDB.QueryRowContext(ctx, `SELECT test_fmt_newline_func()`).Scan(&result)
+	assertNoErr(t, err)
+	assertEqual(t, result, 42)
+
+	// ALTER with surrounding newlines
+	_, err = connDB.ExecContext(ctx, "\n\nALTER FUNCTION test_fmt_newline_func() RENAME TO test_fmt_newline_func_v2\n\n")
+	assertNoErr(t, err)
+	_, err = connDB.ExecContext(ctx, "\nALTER FUNCTION test_fmt_newline_func_v2() RENAME TO test_fmt_newline_func\n")
+	assertNoErr(t, err)
+
+	// DROP with surrounding newlines
+	_, err = connDB.ExecContext(ctx, "\n\nDROP FUNCTION test_fmt_newline_func()\n\n")
+	assertNoErr(t, err)
+}
+
+// TestUDSFFormattingLeadingComment verifies UDSF detection works when a leading
+// line comment (--) precedes the CREATE/DROP keyword.
+func TestUDSFFormattingLeadingComment(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	connDB, err := sql.Open("vertica", myDBConnectString)
+	assertNoErr(t, err)
+	defer connDB.Close()
+
+	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_fmt_comment_func()`)
+
+	createSQL := `-- create a test function
+CREATE FUNCTION test_fmt_comment_func()
+	RETURN INT AS
+	BEGIN
+		RETURN 7;
+	END`
+	_, err = connDB.ExecContext(ctx, createSQL)
+	assertNoErr(t, err)
+
+	var result int
+	err = connDB.QueryRowContext(ctx, `SELECT test_fmt_comment_func()`).Scan(&result)
+	assertNoErr(t, err)
+	assertEqual(t, result, 7)
+
+	// DROP with a leading block comment
+	_, err = connDB.ExecContext(ctx, "/* remove test function */\nDROP FUNCTION test_fmt_comment_func()")
+	assertNoErr(t, err)
+}
+
+// TestUDSFFormattingTabs verifies UDSF detection works when tab characters
+// appear between SQL keywords and inside the function body.
+func TestUDSFFormattingTabs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	connDB, err := sql.Open("vertica", myDBConnectString)
+	assertNoErr(t, err)
+	defer connDB.Close()
+
+	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_fmt_tab_func()`)
+
+	// Tabs between keywords in the signature line
+	createSQL := "CREATE\tFUNCTION test_fmt_tab_func()\n\tRETURN\tINT\tAS\n\tBEGIN\n\t\tRETURN\t5;\n\tEND"
+	_, err = connDB.ExecContext(ctx, createSQL)
+	assertNoErr(t, err)
+
+	var result int
+	err = connDB.QueryRowContext(ctx, `SELECT test_fmt_tab_func()`).Scan(&result)
+	assertNoErr(t, err)
+	assertEqual(t, result, 5)
+
+	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION test_fmt_tab_func()`)
+}
+
+// TestUDSFFormattingInlineComments verifies UDSF detection and atomic execution
+// when line comments (--) and block comments (/* */) appear inside the body.
+func TestUDSFFormattingInlineComments(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	connDB, err := sql.Open("vertica", myDBConnectString)
+	assertNoErr(t, err)
+	defer connDB.Close()
+
+	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_fmt_inline_comment_func()`)
+
+	createSQL := `CREATE FUNCTION test_fmt_inline_comment_func() -- inline line comment
+	RETURN INT AS
+	BEGIN
+		-- line comment inside body
+		RETURN /* block comment inline */ 13;
+	END`
+	_, err = connDB.ExecContext(ctx, createSQL)
+	assertNoErr(t, err)
+
+	var result int
+	err = connDB.QueryRowContext(ctx, `SELECT test_fmt_inline_comment_func()`).Scan(&result)
+	assertNoErr(t, err)
+	assertEqual(t, result, 13)
+
+	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION test_fmt_inline_comment_func()`)
 }

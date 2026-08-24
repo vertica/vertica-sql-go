@@ -116,6 +116,15 @@ func (ua *UDSFAnalyzer) GetStatementType(sql string) (UDSFStatementType, error) 
 		return UDSFStatementTypeCreateFunction, nil
 	}
 
+	// Detect CREATE OR REPLACE FUNCTION
+	if firstToken == "CREATE" && len(tokens) > 3 {
+		thirdToken := strings.ToUpper(tokens[2])
+		fourthToken := strings.ToUpper(tokens[3])
+		if secondToken == "OR" && thirdToken == "REPLACE" && fourthToken == "FUNCTION" {
+			return UDSFStatementTypeCreateFunction, nil
+		}
+	}
+
 	// Detect ALTER FUNCTION
 	if firstToken == "ALTER" && secondToken == "FUNCTION" {
 		return UDSFStatementTypeAlterFunction, nil
