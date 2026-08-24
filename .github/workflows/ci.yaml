@@ -115,8 +115,36 @@ jobs:
 
       # Create Vertica License Secret from GitHub Secret
       - name: Create Vertica License Secret
+        env:
+          VERTICA_LICENSE: ${{ secrets.VERTICA_LICENSE }}
         run: |
-          echo "${{ secrets.VERTICA_LICENSE }}" | base64 -d > /tmp/license.dat
+          set -euo pipefail
+
+          # Guard: fail clearly if the GitHub secret is not configured
+          if [ -z "${VERTICA_LICENSE:-}" ]; then
+            echo "ERROR: GitHub secret 'VERTICA_LICENSE' is not set or is empty."
+            echo "Configure it under repo Settings > Secrets and variables > Actions."
+            echo "Store either the raw Vertica license file contents or its base64-encoded form."
+            exit 1
+          fi
+
+          # Accept both base64-encoded and raw license content (without echoing the value).
+          # Try base64 decode first; if that fails, treat the secret as raw license text.
+          if printf '%s' "${VERTICA_LICENSE}" | base64 -d > /tmp/license.dat 2>/dev/null && [ -s /tmp/license.dat ]; then
+            echo "Decoded VERTICA_LICENSE as base64."
+          else
+            printf '%s' "${VERTICA_LICENSE}" > /tmp/license.dat
+            echo "Using VERTICA_LICENSE as raw license content."
+          fi
+
+          # Guard: ensure the resulting license file is non-empty
+          if [ ! -s /tmp/license.dat ]; then
+            echo "ERROR: Resulting license file is empty. Check the 'VERTICA_LICENSE' secret value."
+            rm -f /tmp/license.dat
+            exit 1
+          fi
+
+          kubectl delete secret vertica-license -n my-verticadb-operator --ignore-not-found
           kubectl create secret generic vertica-license \
             -n my-verticadb-operator \
             --from-file=license.dat=/tmp/license.dat
