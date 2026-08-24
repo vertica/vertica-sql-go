@@ -175,24 +175,34 @@ jobs:
           NS=my-verticadb-operator
           SS=verticadb-sample-defaultsubcluster
           POD=${SS}-0
-          for i in {1..30}; do
-            kubectl get pod ${POD} -n ${NS} && break || sleep 10
+
+          echo "Waiting for Vertica pod to be Ready (polling with diagnostics)..."
+          DEADLINE=$((SECONDS + 1200))   # 20 minutes
+          while [ $SECONDS -lt $DEADLINE ]; do
+            PHASE=$(kubectl get pod ${POD} -n ${NS} -o jsonpath='{.status.phase}' 2>/dev/null || true)
+            READY=$(kubectl get pod ${POD} -n ${NS} -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
+            echo "[$(date -u +%H:%M:%S)] pod=${POD} phase=${PHASE:-<none>} ready=${READY:-<none>}"
+
+            if [ "${READY}" = "True" ]; then
+              echo "Vertica pod is Ready."
+              kubectl get pods -n ${NS} -o wide || true
+              exit 0
+            fi
+
+            # Surface why the pod can't start
+            kubectl get pods -n ${NS} -o wide || true
+            echo "--- Recent pod events ---"
+            kubectl get events -n ${NS} --sort-by=.lastTimestamp 2>/dev/null | tail -15 || true
+            sleep 20
           done
 
-          echo "Waiting for VerticaDB to be initialized..."
-          kubectl wait --for=condition=DBInitialized=True verticadb/verticadb-sample \
-            -n ${NS} --timeout=15m || true
-
-          echo "Waiting for Vertica pod to be Ready..."
-          if ! kubectl wait --for=condition=Ready pod/${POD} -n ${NS} --timeout=15m; then
-            echo "Vertica pod did not become Ready. Collecting diagnostics..."
-            kubectl get verticadb verticadb-sample -n ${NS} -o yaml || true
-            kubectl get pods -n ${NS} -o wide || true
-            kubectl describe pod ${POD} -n ${NS} || true
-            kubectl logs ${POD} -n ${NS} -c server --tail=100 || true
-            kubectl -n ${NS} logs -l app.kubernetes.io/name=verticadb-operator --tail=100 || true
-            exit 1
-          fi
+          echo "Vertica pod did not become Ready in time. Collecting full diagnostics..."
+          kubectl get verticadb verticadb-sample -n ${NS} -o yaml || true
+          kubectl get pods -n ${NS} -o wide || true
+          kubectl describe pod ${POD} -n ${NS} || true
+          kubectl logs ${POD} -n ${NS} -c server --tail=100 || true
+          kubectl -n ${NS} logs -l app.kubernetes.io/name=verticadb-operator --tail=100 || true
+          exit 1
 
       # Deploy Keycloak in K8s
       - name: Deploy Keycloak
