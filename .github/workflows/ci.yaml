@@ -147,6 +147,8 @@ jobs:
           metadata:
             name: verticadb-sample
             namespace: my-verticadb-operator
+            annotations:
+              vertica.com/k-safety: "0"
           spec:
             image: opentext/vertica-k8s:latest
             dbName: vdb
@@ -162,7 +164,7 @@ jobs:
               depotPath: /depot
             subclusters:
               - name: defaultsubcluster
-                size: 3
+                size: 1
           EOF
           kubectl annotate verticadb verticadb-sample -n my-verticadb-operator \
             vertica.com/ci-reconcile="$(date -u +%s)" --overwrite || true
