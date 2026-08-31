@@ -18,19 +18,43 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
-          
+
+      - name: Check license availability
+        id: license-check
+        env:
+          VERTICA_LICENSE: ${{ secrets.VERTICA_LICENSE }}
+        run: |
+          is_fork="${{ github.event.pull_request.head.repo.fork }}"
+
+          if [ "$is_fork" = "true" ] && [ -z "${VERTICA_LICENSE:-}" ]; then
+            echo "::notice::Fork PR detected — VERTICA_LICENSE secret is unavailable. Skipping K8s integration tests."
+            echo "run_k8s=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # For internal PRs and pushes, the license must be present
+          if [ -z "${VERTICA_LICENSE:-}" ]; then
+            echo "::error::GitHub secret 'VERTICA_LICENSE' is not set or is empty. Configure it under repo Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+          echo "run_k8s=true" >> "$GITHUB_OUTPUT"
+
       - name: Set up Kubernetes (KinD)
+        if: steps.license-check.outputs.run_k8s == 'true'
         uses: helm/kind-action@v1.8.0
         with:
           cluster_name: vertica-ci
           node_image: kindest/node:v1.29.0
 
       - name: Set up Helm
+        if: steps.license-check.outputs.run_k8s == 'true'
         uses: azure/setup-helm@v3
         with:
           version: "3.11.3"
 
       - name: Add Helm repos
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           helm repo add vertica-charts https://vertica.github.io/charts || true
           helm repo add bitnami https://charts.bitnami.com/bitnami || true
@@ -38,6 +62,7 @@ jobs:
 
       # Step 4: Install MinIO for communal storage
       - name: Install MinIO (namespace minio)
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           kubectl create ns minio || true
           cat <<'EOF' > minio.yaml
@@ -92,6 +117,7 @@ jobs:
           kubectl get svc -n minio || true
 
       - name: Ensure MinIO bucket exists
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           kubectl run mc-client --rm -i --restart=Never \
             --image=minio/mc:latest \
@@ -104,6 +130,7 @@ jobs:
 
       # Create MinIO credentials secret
       - name: Create MinIO Secret
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           kubectl delete secret communal-creds -n my-verticadb-operator --ignore-not-found
           kubectl create ns my-verticadb-operator || true
@@ -113,8 +140,39 @@ jobs:
             --from-literal=secretkey="minioadmin"
           kubectl get secret communal-creds -n my-verticadb-operator -o yaml || true
 
+      # Create Vertica License Secret from GitHub Secret
+      - name: Create Vertica License Secret
+        if: steps.license-check.outputs.run_k8s == 'true'
+        env:
+          VERTICA_LICENSE: ${{ secrets.VERTICA_LICENSE }}
+        run: |
+          set -euo pipefail
+
+          # Accept both base64-encoded and raw license content (without echoing the value).
+          # Try base64 decode first; if that fails, treat the secret as raw license text.
+          if printf '%s' "${VERTICA_LICENSE}" | base64 -d > /tmp/license.dat 2>/dev/null && [ -s /tmp/license.dat ]; then
+            echo "Decoded VERTICA_LICENSE as base64."
+          else
+            printf '%s' "${VERTICA_LICENSE}" > /tmp/license.dat
+            echo "Using VERTICA_LICENSE as raw license content."
+          fi
+
+          # Guard: ensure the resulting license file is non-empty
+          if [ ! -s /tmp/license.dat ]; then
+            echo "ERROR: Resulting license file is empty. Check the 'VERTICA_LICENSE' secret value."
+            rm -f /tmp/license.dat
+            exit 1
+          fi
+
+          kubectl delete secret vertica-license -n my-verticadb-operator --ignore-not-found
+          kubectl create secret generic vertica-license \
+            -n my-verticadb-operator \
+            --from-file=license.dat=/tmp/license.dat
+          rm -f /tmp/license.dat
+
       # Install Vertica Operator
       - name: Install Vertica Operator
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           cat <<'EOF' > operator-values.yaml
           installCRDs: true
@@ -131,6 +189,7 @@ jobs:
 
       # Deploy VerticaDB with MinIO
       - name: Deploy VerticaDB
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           cat <<'EOF' | kubectl apply -f -
           apiVersion: vertica.com/v1
@@ -138,9 +197,12 @@ jobs:
           metadata:
             name: verticadb-sample
             namespace: my-verticadb-operator
+            annotations:
+              vertica.com/k-safety: "0"
           spec:
             image: opentext/vertica-k8s:latest
             dbName: vdb
+            licenseSecret: vertica-license
             initPolicy: Create
             communal:
               path: s3://vertica-fleeting/mkottakota/
@@ -152,13 +214,14 @@ jobs:
               depotPath: /depot
             subclusters:
               - name: defaultsubcluster
-                size: 3
+                size: 1
           EOF
           kubectl annotate verticadb verticadb-sample -n my-verticadb-operator \
             vertica.com/ci-reconcile="$(date -u +%s)" --overwrite || true
 
       # Wait for Vertica readiness
       - name: Wait for Vertica readiness
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           NS=my-verticadb-operator
           SS=verticadb-sample-defaultsubcluster
@@ -170,6 +233,7 @@ jobs:
 
       # Deploy Keycloak in K8s
       - name: Deploy Keycloak
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           kubectl create ns keycloak || true
           cat <<'EOF' | kubectl apply -f -
@@ -222,12 +286,14 @@ jobs:
 
       # Wait for Keycloak readiness
       - name: Wait for Keycloak readiness
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           kubectl -n keycloak rollout status deploy/keycloak --timeout=2m
           kubectl -n keycloak get pods -o wide
 
       # Configure Keycloak realm, client, and user
       - name: Configure Keycloak realm, client, and user
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           kubectl -n keycloak exec deploy/keycloak -- \
             /opt/keycloak/bin/kcadm.sh config credentials \
@@ -254,6 +320,7 @@ jobs:
 
       # Configure Vertica Authentication
       - name: Configure Vertica Authentication
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           NS=my-verticadb-operator
           POD=verticadb-sample-defaultsubcluster-0
@@ -275,14 +342,17 @@ jobs:
 
       # Generate TLS certs on runner
       - name: Generate TLS certs on runner
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: ./resources/tests/genCerts.sh
 
       - name: Inspect server certificate SANs
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           openssl x509 -in resources/tests/ssl/server.crt -noout -text | grep -A1 "Subject Alternative Name"
 
       # Run Vertica SQL Go tests
       - name: Run Vertica SQL Go tests
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           NS=my-verticadb-operator
           SVC=verticadb-sample-defaultsubcluster
@@ -331,6 +401,7 @@ jobs:
 
       # Ebabling TLS & TLS Tests (server Mode)
       - name: Run TLS tests with Server mode
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           NS=my-verticadb-operator
           POD=verticadb-sample-defaultsubcluster-0
@@ -354,6 +425,7 @@ jobs:
           "
 
       - name: Run Vertica SQL Go TLS custom tests
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           NS=my-verticadb-operator
           POD=verticadb-sample-defaultsubcluster-0
@@ -372,10 +444,12 @@ jobs:
           "
           kubectl -n ${NS} delete pod go-test-runner --ignore-not-found=true
 
-      # Cleanup MinIO
+      # Cleanup MinIO and license artifacts
       - name: Uninstall MinIO
-        if: always()
+        if: always() && steps.license-check.outputs.run_k8s == 'true'
         run: |
+          kubectl -n my-verticadb-operator delete secret vertica-license --ignore-not-found || true
+          rm -f /tmp/license.dat
           kubectl delete pod minio -n minio --ignore-not-found || true
           kubectl delete svc minio -n minio --ignore-not-found || true
           kubectl delete ns minio || true
