@@ -439,6 +439,12 @@ func (s *stmt) runSimpleStatement(ctx context.Context, sql string) (*rows, error
 	}
 
 	result := newEmptyRows()
+	var success bool
+	defer func() {
+		if !success && result != nil {
+			_ = result.Close()
+		}
+	}()
 
 	if err := s.conn.sendMessage(&msgs.FEQueryMsg{Query: statement}); err != nil {
 		return result, err
@@ -453,9 +459,12 @@ func (s *stmt) runSimpleStatement(ctx context.Context, sql string) (*rows, error
 		switch msg := bMsg.(type) {
 		case *msgs.BEDataRowMsg:
 			if err = result.addRow(msg); err != nil {
-				return result, err
+				return newEmptyRows(), err
 			}
 		case *msgs.BERowDescMsg:
+			if result != nil {
+				_ = result.Close()
+			}
 			result = newRows(ctx, msg, s.conn.serverTZOffset)
 		case *msgs.BECmdDescriptionMsg:
 			continue
@@ -470,11 +479,12 @@ func (s *stmt) runSimpleStatement(ctx context.Context, sql string) (*rows, error
 			return newEmptyRows(), nil
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg:
 			if err = result.finalize(); err != nil {
-				return result, err
+				return newEmptyRows(), err
 			}
 			if ctxErr := ctx.Err(); ctxErr != nil {
-				return result, ctxErr
+				return newEmptyRows(), ctxErr
 			}
+			success = true
 			return result, nil
 		case *msgs.BEInitSTDINLoadMsg:
 			s.copySTDIN(ctx)
@@ -1054,6 +1064,13 @@ func (s *stmt) collectResults(ctx context.Context) (*rows, error) {
 		rows = newRows(ctx, s.lastRowDesc, s.conn.serverTZOffset)
 	}
 
+	var success bool
+	defer func() {
+		if !success && rows != nil {
+			_ = rows.Close()
+		}
+	}()
+
 	for {
 		bMsg, err := s.conn.recvMessage()
 
@@ -1078,7 +1095,7 @@ func (s *stmt) collectResults(ctx context.Context) (*rows, error) {
 			}
 			err = rows.addRow(msg)
 			if err != nil {
-				return rows, err
+				return newEmptyRows(), err
 			}
 		case *msgs.BERowDescMsg:
 			// An execution-time RowDescription may arrive before any DataRows
@@ -1086,6 +1103,9 @@ func (s *stmt) collectResults(ctx context.Context) (*rows, error) {
 			// Only adopt it if it has at least as many columns, to prevent a
 			// truncated description from silently replacing a wider one.
 			if rows.resultData.Peek() == nil && len(msg.Columns) >= len(rows.columnDefs.Columns) {
+				if rows != nil {
+					_ = rows.Close()
+				}
 				s.lastRowDesc = msg
 				rows = newRows(ctx, s.lastRowDesc, s.conn.serverTZOffset)
 			}
@@ -1099,8 +1119,9 @@ func (s *stmt) collectResults(ctx context.Context) (*rows, error) {
 		case *msgs.BEReadyForQueryMsg, *msgs.BEPortalSuspendedMsg, *msgs.BECmdCompleteMsg:
 			err = rows.finalize()
 			if err != nil {
-				return rows, err
+				return newEmptyRows(), err
 			}
+			success = true
 			return rows, ctx.Err()
 		case *msgs.BEInitSTDINLoadMsg:
 			s.copySTDIN(ctx)
