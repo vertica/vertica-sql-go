@@ -233,13 +233,36 @@ jobs:
       - name: Wait for Vertica readiness
         if: steps.license-check.outputs.run_k8s == 'true'
         run: |
+          set -euo pipefail
           NS=my-verticadb-operator
           SS=verticadb-sample-defaultsubcluster
           POD=${SS}-0
-          for i in {1..30}; do
-            kubectl get pod ${POD} -n ${NS} && break || sleep 10
+
+          # Wait for the operator to create the pod
+          for i in {1..60}; do
+            kubectl get pod ${POD} -n ${NS} >/dev/null 2>&1 && break || sleep 10
           done
-          kubectl wait --for=condition=Ready pod/${POD} -n ${NS} --timeout=5m || true
+
+          # Block until the Vertica node is Ready (image pulled, DB created, node UP).
+          # No "|| true": a genuine failure must fail this step instead of leaking
+          # into the later "Configure Vertica Authentication" step.
+          kubectl wait --for=condition=Ready pod/${POD} -n ${NS} --timeout=25m
+
+          # Actively confirm the server accepts SQL connections before proceeding.
+          for i in {1..30}; do
+            if kubectl -n ${NS} exec ${POD} -c server -- \
+                 /opt/vertica/bin/vsql -U dbadmin -c "SELECT 1" >/dev/null 2>&1; then
+              echo "Vertica is accepting connections on port 5433."
+              exit 0
+            fi
+            echo "Waiting for Vertica to accept SQL connections... (${i})"
+            sleep 10
+          done
+
+          echo "ERROR: Vertica pod is Ready but not accepting SQL connections."
+          kubectl -n ${NS} get pods -o wide || true
+          kubectl -n ${NS} describe verticadb verticadb-sample || true
+          exit 1
 
       # Deploy Keycloak in K8s
       - name: Deploy Keycloak
@@ -459,6 +482,7 @@ jobs:
         if: always() && steps.license-check.outputs.run_k8s == 'true'
         run: |
           kubectl -n my-verticadb-operator delete secret vertica-license --ignore-not-found || true
+          kubectl -n my-verticadb-operator delete secret su-passwd --ignore-not-found || true
           rm -f /tmp/license.dat
           kubectl delete pod minio -n minio --ignore-not-found || true
           kubectl delete svc minio -n minio --ignore-not-found || true
