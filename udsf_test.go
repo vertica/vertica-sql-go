@@ -67,22 +67,22 @@ func TestUDSFAnalyzer_IsUDSFStatement(t *testing.T) {
 		{
 			name:     "GRANT USAGE",
 			sql:      "GRANT USAGE ON SCHEMA my_schema TO user1",
-			expected: true,
+			expected: false,
 		},
 		{
 			name:     "GRANT EXECUTE",
 			sql:      "GRANT EXECUTE ON FUNCTION my_func() TO user1",
-			expected: true,
+			expected: false,
 		},
 		{
 			name:     "REVOKE USAGE",
 			sql:      "REVOKE USAGE ON SCHEMA my_schema FROM user1",
-			expected: true,
+			expected: false,
 		},
 		{
 			name:     "REVOKE EXECUTE",
 			sql:      "REVOKE EXECUTE ON FUNCTION my_func() FROM user1",
-			expected: true,
+			expected: false,
 		},
 		{
 			name:     "SELECT statement",
@@ -359,7 +359,7 @@ func TestUDSFAnalyzer_ShouldTreatAsAtomicUnit(t *testing.T) {
 		{
 			name:     "GRANT USAGE should be atomic",
 			sql:      "GRANT USAGE ON SCHEMA my_schema TO user1",
-			expected: true,
+			expected: false,
 		},
 		{
 			name:     "GRANT EXECUTE should be atomic",
@@ -369,7 +369,7 @@ func TestUDSFAnalyzer_ShouldTreatAsAtomicUnit(t *testing.T) {
 		{
 			name:     "REVOKE USAGE should be atomic",
 			sql:      "REVOKE USAGE ON SCHEMA my_schema FROM user1",
-			expected: true,
+			expected: false,
 		},
 		{
 			name:     "REVOKE EXECUTE should be atomic",
@@ -490,8 +490,12 @@ func TestUDSFAnalyzer_GrantWithMultipleUsers(t *testing.T) {
 	WITH GRANT OPTION;`
 
 	result := analyzer.IsUDSFStatement(grantMultiple)
-	if !result {
-		t.Errorf("IsUDSFStatement should recognize GRANT with multiple users")
+	if result {
+		t.Errorf("IsUDSFStatement should not classify GRANT EXECUTE as a UDSF function DDL statement")
+	}
+
+	if !analyzer.ShouldTreatAsAtomicUnit(grantMultiple) {
+		t.Errorf("ShouldTreatAsAtomicUnit should recognize function EXECUTE privilege statements")
 	}
 
 	stmtType, _ := analyzer.GetStatementType(grantMultiple)
@@ -507,8 +511,12 @@ func TestUDSFAnalyzer_RevokeWithCascade(t *testing.T) {
 	FROM user1 CASCADE;`
 
 	result := analyzer.IsUDSFStatement(revokeCascade)
-	if !result {
-		t.Errorf("IsUDSFStatement should recognize REVOKE USAGE")
+	if result {
+		t.Errorf("IsUDSFStatement should not classify schema USAGE revoke as UDSF function DDL")
+	}
+
+	if analyzer.ShouldTreatAsAtomicUnit(revokeCascade) {
+		t.Errorf("ShouldTreatAsAtomicUnit should not force schema USAGE revoke to atomic path")
 	}
 
 	stmtType, _ := analyzer.GetStatementType(revokeCascade)
@@ -652,5 +660,112 @@ func TestUDSFAnalyzer_LeadingWhitespace(t *testing.T) {
 				t.Errorf("GetStatementType(%q) = %v, want %v", tt.sql, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestUDSFAnalyzer_RejectsUDSFWhenAnotherStatementFollows(t *testing.T) {
+	analyzer := NewUDSFAnalyzer()
+
+	sql := "DROP FUNCTION foo(); SELECT 1;"
+
+	if analyzer.IsUDSFStatement(sql) {
+		t.Errorf("IsUDSFStatement(%q) = true, want false", sql)
+	}
+
+	if analyzer.ShouldTreatAsAtomicUnit(sql) {
+		t.Errorf("ShouldTreatAsAtomicUnit(%q) = true, want false", sql)
+	}
+
+	stmtType, err := analyzer.GetStatementType(sql)
+	if err != nil {
+		t.Fatalf("GetStatementType(%q) returned unexpected error: %v", sql, err)
+	}
+	if stmtType != UDSFStatementTypeDropFunction {
+		t.Errorf("GetStatementType(%q) = %v, want %v", sql, stmtType, UDSFStatementTypeDropFunction)
+	}
+}
+
+func TestUDSFAnalyzer_AllowsNestedControlFlowInBeginEndBlock(t *testing.T) {
+	analyzer := NewUDSFAnalyzer()
+
+	sql := `CREATE OR REPLACE FUNCTION nested_flow_test()
+	RETURN INT AS
+	BEGIN
+		IF 1 = 1 THEN
+			LOOP
+				EXIT;
+			END LOOP;
+		END IF;
+		RETURN CASE WHEN 1 = 1 THEN 1 ELSE 0 END;
+	END;`
+
+	if !analyzer.IsUDSFStatement(sql) {
+		t.Errorf("IsUDSFStatement should recognize nested control-flow function body")
+	}
+
+	if !analyzer.ShouldTreatAsAtomicUnit(sql) {
+		t.Errorf("ShouldTreatAsAtomicUnit should keep nested control-flow function body atomic")
+	}
+
+	stmtType, err := analyzer.GetStatementType(sql)
+	if err != nil {
+		t.Fatalf("GetStatementType returned unexpected error: %v", err)
+	}
+	if stmtType != UDSFStatementTypeCreateFunction {
+		t.Errorf("GetStatementType = %v, want %v", stmtType, UDSFStatementTypeCreateFunction)
+	}
+}
+
+func TestUDSFAnalyzer_IsAtomicPrivilegeStatement(t *testing.T) {
+	analyzer := NewUDSFAnalyzer()
+
+	tests := []struct {
+		name     string
+		sql      string
+		expected bool
+	}{
+		{
+			name:     "GRANT EXECUTE ON FUNCTION is atomic",
+			sql:      "GRANT EXECUTE ON FUNCTION my_func() TO user1",
+			expected: true,
+		},
+		{
+			name:     "REVOKE EXECUTE ON FUNCTION is atomic",
+			sql:      "REVOKE EXECUTE ON FUNCTION my_func() FROM user1",
+			expected: true,
+		},
+		{
+			name:     "GRANT USAGE ON SCHEMA is not atomic",
+			sql:      "GRANT USAGE ON SCHEMA my_schema TO user1",
+			expected: false,
+		},
+		{
+			name:     "function EXECUTE followed by another statement is not atomic",
+			sql:      "GRANT EXECUTE ON FUNCTION my_func() TO user1; SELECT 1;",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := analyzer.IsAtomicPrivilegeStatement(tt.sql)
+			if result != tt.expected {
+				t.Errorf("IsAtomicPrivilegeStatement(%q) = %v, want %v", tt.sql, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestUDSFAnalyzer_DoubleSlashIsNotSQLComment(t *testing.T) {
+	analyzer := NewUDSFAnalyzer()
+
+	sql := "DROP FUNCTION foo(); // SELECT 1;"
+
+	if analyzer.IsUDSFStatement(sql) {
+		t.Errorf("IsUDSFStatement(%q) = true, want false", sql)
+	}
+
+	if analyzer.ShouldTreatAsAtomicUnit(sql) {
+		t.Errorf("ShouldTreatAsAtomicUnit(%q) = true, want false", sql)
 	}
 }

@@ -48,9 +48,9 @@ SELECT 1; /* block;comment */ SELECT 2;`,
 			expected: nil,
 		},
 		{
-			name:     "double slash line comment",
+			name:     "double slash is not line comment",
 			query:    "SELECT 1; // comment about next\nSELECT 2;",
-			expected: []string{"SELECT 1", "SELECT 2"},
+			expected: []string{"SELECT 1", "// comment about next\nSELECT 2"},
 		},
 	}
 

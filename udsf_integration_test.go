@@ -66,6 +66,9 @@ func TestUDSFCreateFunctionSimple(t *testing.T) {
 
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_simple_func()`)
+	})
 
 	// Verify the function exists by calling it
 	var result int
@@ -73,9 +76,6 @@ func TestUDSFCreateFunctionSimple(t *testing.T) {
 	err = connDB.QueryRowContext(ctx, querySQL).Scan(&result)
 	assertNoErr(t, err)
 	assertEqual(t, result, 1)
-
-	// Clean up
-	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION test_simple_func()`)
 }
 
 // TestUDSFCreateFunctionMultiline verifies that CREATE FUNCTION with multi-line
@@ -110,6 +110,9 @@ func TestUDSFCreateFunctionMultiline(t *testing.T) {
 
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_multiline_func(INT)`)
+	})
 
 	// Test the function with different values
 	testCases := []struct {
@@ -128,9 +131,6 @@ func TestUDSFCreateFunctionMultiline(t *testing.T) {
 		assertNoErr(t, err)
 		assertEqual(t, result, tc.expected)
 	}
-
-	// Clean up
-	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION test_multiline_func(INT)`)
 }
 
 // TestUDSFCreateFunctionWithSemicolonsInStrings verifies that embedded semicolons
@@ -160,6 +160,9 @@ func TestUDSFCreateFunctionWithSemicolonsInStrings(t *testing.T) {
 
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_semicolon_func()`)
+	})
 
 	// Verify the function returns the expected value
 	var result string
@@ -167,9 +170,6 @@ func TestUDSFCreateFunctionWithSemicolonsInStrings(t *testing.T) {
 	err = connDB.QueryRowContext(ctx, querySQL).Scan(&result)
 	assertNoErr(t, err)
 	assertEqual(t, result, "value with; semicolon; inside")
-
-	// Clean up
-	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION test_semicolon_func()`)
 }
 
 // TestUDSFCreateFunctionWithDollarQuoting verifies support for dollar-quoted
@@ -203,15 +203,15 @@ func TestUDSFCreateFunctionWithDollarQuoting(t *testing.T) {
 
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_dollar_func(INT)`)
+	})
 
 	// Verify the function works
 	var result int
 	err = connDB.QueryRowContext(ctx, `SELECT test_dollar_func(5)`).Scan(&result)
 	assertNoErr(t, err)
 	assertEqual(t, result, 1)
-
-	// Clean up
-	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION test_dollar_func(INT)`)
 }
 
 // TestUDSFAlterFunction verifies that ALTER FUNCTION statements are executed
@@ -237,6 +237,10 @@ func TestUDSFAlterFunction(t *testing.T) {
 	END`
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_alter_func()`)
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_alter_func_v2()`)
+	})
 
 	// Rename the function to verify ALTER FUNCTION executes as an atomic unit
 	alterSQL := `ALTER FUNCTION test_alter_func() RENAME TO test_alter_func_v2`
@@ -253,9 +257,6 @@ func TestUDSFAlterFunction(t *testing.T) {
 	err = connDB.QueryRowContext(ctx, `SELECT test_alter_func()`).Scan(&result)
 	assertNoErr(t, err)
 	assertEqual(t, result, 42)
-
-	// Clean up
-	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION test_alter_func()`)
 }
 
 // TestUDSFDropFunction verifies that DROP FUNCTION statements are executed
@@ -280,6 +281,9 @@ func TestUDSFDropFunction(t *testing.T) {
 	END`
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_drop_func()`)
+	})
 
 	// Verify it exists
 	var result int
@@ -315,7 +319,14 @@ func TestUDSFGrantExecute(t *testing.T) {
 	// Create a test role
 	_, _ = connDB.ExecContext(ctx, `DROP ROLE IF EXISTS test_udsf_role`)
 	roleSQL := `CREATE ROLE test_udsf_role`
-	_, _ = connDB.ExecContext(ctx, roleSQL)
+	_, err = connDB.ExecContext(ctx, roleSQL)
+	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP ROLE IF EXISTS test_udsf_role`)
+	})
+
+	// Ensure re-runs don't fail if a previous run leaked the function.
+	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_grant_func()`)
 
 	// Create a function
 	createSQL := `CREATE FUNCTION test_grant_func()
@@ -323,17 +334,17 @@ func TestUDSFGrantExecute(t *testing.T) {
 	BEGIN
 		RETURN 1;
 	END`
-	_, _ = connDB.ExecContext(ctx, createSQL)
+	_, err = connDB.ExecContext(ctx, createSQL)
+	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_grant_func()`)
+	})
 
 	// Grant EXECUTE privilege
 	grantSQL := `GRANT EXECUTE ON FUNCTION test_grant_func()
 	TO test_udsf_role`
 	_, err = connDB.ExecContext(ctx, grantSQL)
 	assertNoErr(t, err)
-
-	// Clean up
-	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION test_grant_func()`)
-	_, _ = connDB.ExecContext(ctx, `DROP ROLE IF EXISTS test_udsf_role`)
 }
 
 // TestUDSFRevokeExecute verifies that REVOKE EXECUTE statements for functions
@@ -353,7 +364,14 @@ func TestUDSFRevokeExecute(t *testing.T) {
 	// Create a test role
 	_, _ = connDB.ExecContext(ctx, `DROP ROLE IF EXISTS test_udsf_role2`)
 	roleSQL := `CREATE ROLE test_udsf_role2`
-	_, _ = connDB.ExecContext(ctx, roleSQL)
+	_, err = connDB.ExecContext(ctx, roleSQL)
+	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP ROLE IF EXISTS test_udsf_role2`)
+	})
+
+	// Ensure re-runs don't fail if a previous run leaked the function.
+	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_revoke_func()`)
 
 	// Create a function
 	createSQL := `CREATE FUNCTION test_revoke_func()
@@ -361,7 +379,11 @@ func TestUDSFRevokeExecute(t *testing.T) {
 	BEGIN
 		RETURN 1;
 	END`
-	_, _ = connDB.ExecContext(ctx, createSQL)
+	_, err = connDB.ExecContext(ctx, createSQL)
+	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_revoke_func()`)
+	})
 
 	// Grant EXECUTE privilege
 	grantSQL := `GRANT EXECUTE ON FUNCTION test_revoke_func() TO test_udsf_role2`
@@ -371,10 +393,6 @@ func TestUDSFRevokeExecute(t *testing.T) {
 	revokeSQL := `REVOKE EXECUTE ON FUNCTION test_revoke_func() FROM test_udsf_role2`
 	_, err = connDB.ExecContext(ctx, revokeSQL)
 	assertNoErr(t, err)
-
-	// Clean up
-	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION test_revoke_func()`)
-	_, _ = connDB.ExecContext(ctx, `DROP ROLE IF EXISTS test_udsf_role2`)
 }
 
 // TestUDSFGrantUsageOnSchema verifies that GRANT USAGE ON SCHEMA statements
@@ -394,20 +412,24 @@ func TestUDSFGrantUsageOnSchema(t *testing.T) {
 	// Create a test role
 	_, _ = connDB.ExecContext(ctx, `DROP ROLE IF EXISTS test_schema_role`)
 	roleSQL := `CREATE ROLE test_schema_role`
-	_, _ = connDB.ExecContext(ctx, roleSQL)
+	_, err = connDB.ExecContext(ctx, roleSQL)
+	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP ROLE IF EXISTS test_schema_role`)
+	})
 
 	// Create a test schema
 	schemaSQL := `CREATE SCHEMA IF NOT EXISTS test_schema`
-	_, _ = connDB.ExecContext(ctx, schemaSQL)
+	_, err = connDB.ExecContext(ctx, schemaSQL)
+	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP SCHEMA IF EXISTS test_schema CASCADE`)
+	})
 
 	// Grant USAGE privilege on schema
 	grantSQL := `GRANT USAGE ON SCHEMA test_schema TO test_schema_role`
 	_, err = connDB.ExecContext(ctx, grantSQL)
 	assertNoErr(t, err)
-
-	// Clean up
-	_, _ = connDB.ExecContext(ctx, `DROP SCHEMA IF EXISTS test_schema`)
-	_, _ = connDB.ExecContext(ctx, `DROP ROLE IF EXISTS test_schema_role`)
 }
 
 // TestUDSFRevokeUsageOnSchema verifies that REVOKE USAGE ON SCHEMA statements
@@ -427,11 +449,19 @@ func TestUDSFRevokeUsageOnSchema(t *testing.T) {
 	// Create a test role
 	_, _ = connDB.ExecContext(ctx, `DROP ROLE IF EXISTS test_schema_role2`)
 	roleSQL := `CREATE ROLE test_schema_role2`
-	_, _ = connDB.ExecContext(ctx, roleSQL)
+	_, err = connDB.ExecContext(ctx, roleSQL)
+	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP ROLE IF EXISTS test_schema_role2`)
+	})
 
 	// Create a test schema
 	schemaSQL := `CREATE SCHEMA IF NOT EXISTS test_schema2`
-	_, _ = connDB.ExecContext(ctx, schemaSQL)
+	_, err = connDB.ExecContext(ctx, schemaSQL)
+	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP SCHEMA IF EXISTS test_schema2 CASCADE`)
+	})
 
 	// Grant USAGE privilege
 	grantSQL := `GRANT USAGE ON SCHEMA test_schema2 TO test_schema_role2`
@@ -441,10 +471,6 @@ func TestUDSFRevokeUsageOnSchema(t *testing.T) {
 	revokeSQL := `REVOKE USAGE ON SCHEMA test_schema2 FROM test_schema_role2`
 	_, err = connDB.ExecContext(ctx, revokeSQL)
 	assertNoErr(t, err)
-
-	// Clean up
-	_, _ = connDB.ExecContext(ctx, `DROP SCHEMA IF EXISTS test_schema2`)
-	_, _ = connDB.ExecContext(ctx, `DROP ROLE IF EXISTS test_schema_role2`)
 }
 
 // TestUDSFInvokeFunctionInSelect verifies that user-defined functions can be invoked
@@ -472,15 +498,15 @@ func TestUDSFInvokeFunctionInSelect(t *testing.T) {
 	END`
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS custom_add(INT, INT)`)
+	})
 
 	// Invoke in SELECT
 	var result int
 	err = connDB.QueryRowContext(ctx, `SELECT custom_add(5, 3)`).Scan(&result)
 	assertNoErr(t, err)
 	assertEqual(t, result, 8)
-
-	// Clean up
-	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION custom_add(INT, INT)`)
 }
 
 // TestUDSFErrorHandling verifies that invalid UDSF syntax returns exact server errors
@@ -497,6 +523,12 @@ func TestUDSFErrorHandling(t *testing.T) {
 	assertNoErr(t, err)
 	defer connDB.Close()
 
+	// Ensure cleanup runs even when assertions call t.Fatal.
+	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS invalid_func()`)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS invalid_func()`)
+	})
+
 	// Try to create function with invalid syntax
 	invalidSQL := `CREATE FUNCTION invalid_func()
 	RETURN INT AS
@@ -505,11 +537,22 @@ func TestUDSFErrorHandling(t *testing.T) {
 	END`
 
 	_, err = connDB.ExecContext(ctx, invalidSQL)
-	if err == nil {
-		t.Fatal("expected error for invalid function, but got none")
+	if err != nil {
+		// Eager validation path: CREATE fails.
+		errStr := err.Error()
+		if strings.Contains(errStr, "parse error") || strings.Contains(errStr, "split") {
+			t.Fatalf("error appears to be from driver parsing, not server: %s", errStr)
+		}
+		return
 	}
 
-	// Error should be a Vertica error, not a parsing error
+	// Lazy validation path: CREATE succeeds, invocation fails.
+	var result int
+	err = connDB.QueryRowContext(ctx, `SELECT invalid_func()`).Scan(&result)
+	if err == nil {
+		t.Fatal("expected error invoking invalid function, but got none")
+	}
+
 	errStr := err.Error()
 	if strings.Contains(errStr, "parse error") || strings.Contains(errStr, "split") {
 		t.Fatalf("error appears to be from driver parsing, not server: %s", errStr)
@@ -610,6 +653,9 @@ func TestUDSFComplexFunctionWithMultipleParameters(t *testing.T) {
 
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_multi_param(INT, INT, VARCHAR)`)
+	})
 
 	testCases := []struct {
 		val1      int
@@ -630,9 +676,6 @@ func TestUDSFComplexFunctionWithMultipleParameters(t *testing.T) {
 		assertNoErr(t, err)
 		assertEqual(t, result, tc.expected)
 	}
-
-	// Clean up
-	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION test_multi_param(INT, INT, VARCHAR)`)
 }
 
 // TestUDSFQuotedIdentifiers verifies that quoted identifiers in function names
@@ -661,15 +704,15 @@ func TestUDSFQuotedIdentifiers(t *testing.T) {
 
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS "MyQuotedFunc"()`)
+	})
 
 	// Call the function
 	var result int
 	err = connDB.QueryRowContext(ctx, `SELECT "MyQuotedFunc"()`).Scan(&result)
 	assertNoErr(t, err)
 	assertEqual(t, result, 123)
-
-	// Clean up
-	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION "MyQuotedFunc"()`)
 }
 
 // TestUDSFNullHandling verifies that functions correctly handle NULL inputs and outputs.
@@ -700,6 +743,9 @@ func TestUDSFNullHandling(t *testing.T) {
 
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_null_func(INT)`)
+	})
 
 	// Test with NULL
 	var result sql.NullString
@@ -715,16 +761,13 @@ func TestUDSFNullHandling(t *testing.T) {
 	if !result.Valid || result.String != "NOT NULL" {
 		t.Errorf("expected 'NOT NULL', got %v", result)
 	}
-
-	// Clean up
-	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION test_null_func(INT)`)
 }
 
-// TestUDSFTransactionHandling verifies that UDSF operations work correctly
-// within transaction contexts.
-// Given: UDSF CREATE and DROP operations within a transaction
-// When: Transaction is committed
-// Then: All operations persist correctly
+// TestUDSFTransactionHandling verifies that UDSF CREATE FUNCTION executes
+// correctly when routed through *sql.Tx.
+// Given: A transaction context created by BeginTx
+// When: CREATE FUNCTION is executed via tx.ExecContext and the transaction is committed
+// Then: The function is callable afterward, confirming the driver path works with *sql.Tx
 func TestUDSFTransactionHandling(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -753,15 +796,15 @@ func TestUDSFTransactionHandling(t *testing.T) {
 	// Commit transaction
 	err = tx.Commit()
 	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_tx_func()`)
+	})
 
 	// Verify function exists after commit
 	var result int
 	err = connDB.QueryRowContext(ctx, `SELECT test_tx_func()`).Scan(&result)
 	assertNoErr(t, err)
 	assertEqual(t, result, 99)
-
-	// Clean up
-	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION test_tx_func()`)
 }
 
 // TestUDSFFormattingNewlines verifies UDSF detection and atomic execution when
@@ -781,6 +824,10 @@ func TestUDSFFormattingNewlines(t *testing.T) {
 	createSQL := "\n\nCREATE FUNCTION test_fmt_newline_func()\n\tRETURN INT AS\n\tBEGIN\n\t\tRETURN 42;\n\tEND\n\n"
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_fmt_newline_func()`)
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_fmt_newline_func_v2()`)
+	})
 
 	var result int
 	err = connDB.QueryRowContext(ctx, `SELECT test_fmt_newline_func()`).Scan(&result)
@@ -819,6 +866,9 @@ CREATE FUNCTION test_fmt_comment_func()
 	END`
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_fmt_comment_func()`)
+	})
 
 	var result int
 	err = connDB.QueryRowContext(ctx, `SELECT test_fmt_comment_func()`).Scan(&result)
@@ -847,13 +897,14 @@ func TestUDSFFormattingTabs(t *testing.T) {
 	createSQL := "CREATE\tFUNCTION test_fmt_tab_func()\n\tRETURN\tINT\tAS\n\tBEGIN\n\t\tRETURN\t5;\n\tEND"
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_fmt_tab_func()`)
+	})
 
 	var result int
 	err = connDB.QueryRowContext(ctx, `SELECT test_fmt_tab_func()`).Scan(&result)
 	assertNoErr(t, err)
 	assertEqual(t, result, 5)
-
-	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION test_fmt_tab_func()`)
 }
 
 // TestUDSFFormattingInlineComments verifies UDSF detection and atomic execution
@@ -877,11 +928,12 @@ func TestUDSFFormattingInlineComments(t *testing.T) {
 	END`
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_fmt_inline_comment_func()`)
+	})
 
 	var result int
 	err = connDB.QueryRowContext(ctx, `SELECT test_fmt_inline_comment_func()`).Scan(&result)
 	assertNoErr(t, err)
 	assertEqual(t, result, 13)
-
-	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION test_fmt_inline_comment_func()`)
 }

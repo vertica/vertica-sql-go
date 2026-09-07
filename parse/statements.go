@@ -162,11 +162,6 @@ func SplitStatements(query string) []string {
 				inBlockComment = true
 				continue
 			}
-			if next == '/' {
-				i += 2
-				inLineComment = true
-				continue
-			}
 		}
 
 		if ch == '$' {
