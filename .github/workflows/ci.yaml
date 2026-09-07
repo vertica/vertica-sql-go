@@ -170,14 +170,20 @@ jobs:
             --from-file=license.dat=/tmp/license.dat
           rm -f /tmp/license.dat
 
-      # Create superuser password secret (empty password keeps dbadmin passwordless)
+      # Create superuser password secret. The operator requires a NON-EMPTY
+      # password for database creation (it emits "PasswordSecretEmpty" and never
+      # runs create_db otherwise), so generate a random one at runtime and
+      # register it as a masked value so it never appears in logs.
       - name: Create Vertica Superuser Password Secret
         if: steps.license-check.outputs.run_k8s == 'true'
         run: |
+          set -euo pipefail
+          SU_PASSWD="$(openssl rand -hex 16)"
+          echo "::add-mask::${SU_PASSWD}"
           kubectl delete secret su-passwd -n my-verticadb-operator --ignore-not-found
           kubectl create secret generic su-passwd \
             -n my-verticadb-operator \
-            --from-literal=password=""
+            --from-literal=password="${SU_PASSWD}"
 
       # Install Vertica Operator
       - name: Install Vertica Operator
@@ -238,6 +244,11 @@ jobs:
           SS=verticadb-sample-defaultsubcluster
           POD=${SS}-0
 
+          # dbadmin now has a (non-empty) password from the su-passwd secret, so
+          # every SQL connection must supply it. Read it once and mask it.
+          SU_PASSWD=$(kubectl -n ${NS} get secret su-passwd -o jsonpath='{.data.password}' | base64 -d)
+          echo "::add-mask::${SU_PASSWD}"
+
           # Wait for the operator to create the pod
           for i in {1..60}; do
             kubectl get pod ${POD} -n ${NS} >/dev/null 2>&1 && break || sleep 10
@@ -250,7 +261,7 @@ jobs:
           # must fail here instead of leaking into "Configure Vertica Authentication".
           DEADLINE=$((SECONDS + 1500))   # 25 minutes
           until kubectl -n ${NS} exec ${POD} -c server -- \
-                  /opt/vertica/bin/vsql -U dbadmin -c "SELECT 1" >/dev/null 2>&1; do
+                  env VSQL_PASSWORD="${SU_PASSWD}" /opt/vertica/bin/vsql -U dbadmin -c "SELECT 1" >/dev/null 2>&1; do
             if [ $SECONDS -ge $DEADLINE ]; then
               echo "ERROR: Vertica did not accept SQL connections within 25m."
               kubectl -n ${NS} get pods -o wide || true
@@ -357,7 +368,9 @@ jobs:
         run: |
           NS=my-verticadb-operator
           POD=verticadb-sample-defaultsubcluster-0
-          kubectl -n ${NS} exec ${POD} -c server -- bash -c "
+          SU_PASSWD=$(kubectl -n ${NS} get secret su-passwd -o jsonpath='{.data.password}' | base64 -d)
+          echo "::add-mask::${SU_PASSWD}"
+          kubectl -n ${NS} exec ${POD} -c server -- env VSQL_PASSWORD="${SU_PASSWD}" bash -c "
             /opt/vertica/bin/vsql -U dbadmin -c \"
               CREATE AUTHENTICATION v_oauth METHOD 'oauth' HOST '0.0.0.0/0';
               ALTER AUTHENTICATION v_oauth SET client_id = 'vertica';
@@ -390,6 +403,8 @@ jobs:
           NS=my-verticadb-operator
           SVC=verticadb-sample-defaultsubcluster
           LOCATOR="${SVC}.${NS}.svc.cluster.local:5433"
+          SU_PASSWD=$(kubectl -n ${NS} get secret su-passwd -o jsonpath='{.data.password}' | base64 -d)
+          echo "::add-mask::${SU_PASSWD}"
 
           WAIT_TIMEOUT=300
           INTERVAL=5
@@ -405,7 +420,7 @@ jobs:
           kubectl -n ${NS} exec -i go-test-runner -- mkdir -p /workspace
           tar cf - . | kubectl -n ${NS} exec -i go-test-runner -- tar xf - -C /workspace
 
-          kubectl -n ${NS} exec -i go-test-runner -- bash -c "
+          kubectl -n ${NS} exec -i go-test-runner -- env VERTICA_TEST_PASSWORD="${SU_PASSWD}" bash -c "
             set -euo pipefail
             cd /workspace
             go mod tidy
@@ -439,7 +454,9 @@ jobs:
           NS=my-verticadb-operator
           POD=verticadb-sample-defaultsubcluster-0
           LOCATOR="verticadb-sample-defaultsubcluster.${NS}.svc.cluster.local:5433"
-          kubectl -n ${NS} exec ${POD} -c server -- bash -c "
+          SU_PASSWD=$(kubectl -n ${NS} get secret su-passwd -o jsonpath='{.data.password}' | base64 -d)
+          echo "::add-mask::${SU_PASSWD}"
+          kubectl -n ${NS} exec ${POD} -c server -- env VSQL_PASSWORD="${SU_PASSWD}" bash -c "
             /opt/vertica/bin/vsql -U dbadmin -c \"
               CREATE CA CERTIFICATE root_ca AS '$(cat resources/tests/ssl/rootCA.crt)';
               CREATE KEY server_key TYPE 'RSA' AS '$(cat resources/tests/ssl/server.key)';
@@ -451,7 +468,7 @@ jobs:
 
             
           echo '=== Running TLS Tests (server mode) ==='
-          kubectl -n ${NS} exec -i go-test-runner -- bash -c "
+          kubectl -n ${NS} exec -i go-test-runner -- env VERTICA_TEST_PASSWORD="${SU_PASSWD}" bash -c "
             cd /workspace
             go test -v -race . -args --locator '${LOCATOR}' --user dbadmin --tlsmode=server
             go test -race . -args --locator '${LOCATOR}' --user dbadmin --tlsmode=server --use_prepared_statements=0
@@ -463,13 +480,15 @@ jobs:
           NS=my-verticadb-operator
           POD=verticadb-sample-defaultsubcluster-0
           LOCATOR="verticadb-sample-defaultsubcluster.${NS}.svc.cluster.local:5433"
+          SU_PASSWD=$(kubectl -n ${NS} get secret su-passwd -o jsonpath='{.data.password}' | base64 -d)
+          echo "::add-mask::${SU_PASSWD}"
 
             # Enabling TLS Mutual Mode
             kubectl -n ${NS} exec ${POD} -c server -- \
-              /opt/vertica/bin/vsql -U dbadmin -c \
+              env VSQL_PASSWORD="${SU_PASSWD}" /opt/vertica/bin/vsql -U dbadmin -c \
               "ALTER TLS CONFIGURATION server ADD CA CERTIFICATES root_ca TLSMODE 'VERIFY_CA';"
             
-            kubectl -n ${NS} exec -i go-test-runner -- bash -c "
+            kubectl -n ${NS} exec -i go-test-runner -- env VERTICA_TEST_PASSWORD="${SU_PASSWD}" bash -c "
             cd /workspace
             echo '=== Running TLS Tests (custom mode) ==='
             go test -v -race . -args --locator '${LOCATOR}' --user dbadmin --tlsmode=custom
