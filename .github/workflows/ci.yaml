@@ -243,26 +243,26 @@ jobs:
             kubectl get pod ${POD} -n ${NS} >/dev/null 2>&1 && break || sleep 10
           done
 
-          # Block until the Vertica node is Ready (image pulled, DB created, node UP).
-          # No "|| true": a genuine failure must fail this step instead of leaking
-          # into the later "Configure Vertica Authentication" step.
-          kubectl wait --for=condition=Ready pod/${POD} -n ${NS} --timeout=25m
-
-          # Actively confirm the server accepts SQL connections before proceeding.
-          for i in {1..30}; do
-            if kubectl -n ${NS} exec ${POD} -c server -- \
-                 /opt/vertica/bin/vsql -U dbadmin -c "SELECT 1" >/dev/null 2>&1; then
-              echo "Vertica is accepting connections on port 5433."
-              exit 0
+          # Poll until the Vertica node is UP and accepting SQL connections.
+          # Image pull + create_db on the licensed image can take 10-20 min, so we
+          # print progress each iteration (instead of a silent `kubectl wait`) and
+          # gate directly on real SQL connectivity. No `|| true`: a genuine failure
+          # must fail here instead of leaking into "Configure Vertica Authentication".
+          DEADLINE=$((SECONDS + 1500))   # 25 minutes
+          until kubectl -n ${NS} exec ${POD} -c server -- \
+                  /opt/vertica/bin/vsql -U dbadmin -c "SELECT 1" >/dev/null 2>&1; do
+            if [ $SECONDS -ge $DEADLINE ]; then
+              echo "ERROR: Vertica did not accept SQL connections within 25m."
+              kubectl -n ${NS} get pods -o wide || true
+              kubectl -n ${NS} describe pod ${POD} || true
+              kubectl -n ${NS} describe verticadb verticadb-sample || true
+              exit 1
             fi
-            echo "Waiting for Vertica to accept SQL connections... (${i})"
-            sleep 10
+            echo "[$(date -u +%H:%M:%S)] Waiting for Vertica to accept connections..."
+            kubectl -n ${NS} get pod ${POD} -o wide 2>/dev/null || true
+            sleep 15
           done
-
-          echo "ERROR: Vertica pod is Ready but not accepting SQL connections."
-          kubectl -n ${NS} get pods -o wide || true
-          kubectl -n ${NS} describe verticadb verticadb-sample || true
-          exit 1
+          echo "Vertica is accepting SQL connections on port 5433."
 
       # Deploy Keycloak in K8s
       - name: Deploy Keycloak
