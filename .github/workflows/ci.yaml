@@ -170,6 +170,15 @@ jobs:
             --from-file=license.dat=/tmp/license.dat
           rm -f /tmp/license.dat
 
+      # Create superuser password secret (empty password keeps dbadmin passwordless)
+      - name: Create Vertica Superuser Password Secret
+        if: steps.license-check.outputs.run_k8s == 'true'
+        run: |
+          kubectl delete secret su-passwd -n my-verticadb-operator --ignore-not-found
+          kubectl create secret generic su-passwd \
+            -n my-verticadb-operator \
+            --from-literal=password=""
+
       # Install Vertica Operator
       - name: Install Vertica Operator
         if: steps.license-check.outputs.run_k8s == 'true'
@@ -203,6 +212,7 @@ jobs:
             image: opentext/vertica-k8s:latest
             dbName: vdb
             licenseSecret: vertica-license
+            passwordSecret: su-passwd
             initPolicy: Create
             communal:
               path: s3://vertica-fleeting/mkottakota/
