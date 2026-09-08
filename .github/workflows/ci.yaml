@@ -18,19 +18,43 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
-          
+
+      - name: Check license availability
+        id: license-check
+        env:
+          VERTICA_LICENSE: ${{ secrets.VERTICA_LICENSE }}
+        run: |
+          is_fork="${{ github.event.pull_request.head.repo.fork }}"
+
+          if [ "$is_fork" = "true" ] && [ -z "${VERTICA_LICENSE:-}" ]; then
+            echo "::notice::Fork PR detected — VERTICA_LICENSE secret is unavailable. Skipping K8s integration tests."
+            echo "run_k8s=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # For internal PRs and pushes, the license must be present
+          if [ -z "${VERTICA_LICENSE:-}" ]; then
+            echo "::error::GitHub secret 'VERTICA_LICENSE' is not set or is empty. Configure it under repo Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+          echo "run_k8s=true" >> "$GITHUB_OUTPUT"
+
       - name: Set up Kubernetes (KinD)
+        if: steps.license-check.outputs.run_k8s == 'true'
         uses: helm/kind-action@v1.8.0
         with:
           cluster_name: vertica-ci
           node_image: kindest/node:v1.29.0
 
       - name: Set up Helm
+        if: steps.license-check.outputs.run_k8s == 'true'
         uses: azure/setup-helm@v3
         with:
           version: "3.11.3"
 
       - name: Add Helm repos
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           helm repo add vertica-charts https://vertica.github.io/charts || true
           helm repo add bitnami https://charts.bitnami.com/bitnami || true
@@ -38,6 +62,7 @@ jobs:
 
       # Step 4: Install MinIO for communal storage
       - name: Install MinIO (namespace minio)
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           kubectl create ns minio || true
           cat <<'EOF' > minio.yaml
@@ -92,6 +117,7 @@ jobs:
           kubectl get svc -n minio || true
 
       - name: Ensure MinIO bucket exists
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           kubectl run mc-client --rm -i --restart=Never \
             --image=minio/mc:latest \
@@ -104,6 +130,7 @@ jobs:
 
       # Create MinIO credentials secret
       - name: Create MinIO Secret
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           kubectl delete secret communal-creds -n my-verticadb-operator --ignore-not-found
           kubectl create ns my-verticadb-operator || true
@@ -113,8 +140,54 @@ jobs:
             --from-literal=secretkey="minioadmin"
           kubectl get secret communal-creds -n my-verticadb-operator -o yaml || true
 
+      # Create Vertica License Secret from GitHub Secret
+      - name: Create Vertica License Secret
+        if: steps.license-check.outputs.run_k8s == 'true'
+        env:
+          VERTICA_LICENSE: ${{ secrets.VERTICA_LICENSE }}
+        run: |
+          set -euo pipefail
+
+          # Accept both base64-encoded and raw license content (without echoing the value).
+          # Try base64 decode first; if that fails, treat the secret as raw license text.
+          if printf '%s' "${VERTICA_LICENSE}" | base64 -d > /tmp/license.dat 2>/dev/null && [ -s /tmp/license.dat ]; then
+            echo "Decoded VERTICA_LICENSE as base64."
+          else
+            printf '%s' "${VERTICA_LICENSE}" > /tmp/license.dat
+            echo "Using VERTICA_LICENSE as raw license content."
+          fi
+
+          # Guard: ensure the resulting license file is non-empty
+          if [ ! -s /tmp/license.dat ]; then
+            echo "ERROR: Resulting license file is empty. Check the 'VERTICA_LICENSE' secret value."
+            rm -f /tmp/license.dat
+            exit 1
+          fi
+
+          kubectl delete secret vertica-license -n my-verticadb-operator --ignore-not-found
+          kubectl create secret generic vertica-license \
+            -n my-verticadb-operator \
+            --from-file=license.dat=/tmp/license.dat
+          rm -f /tmp/license.dat
+
+      # Create superuser password secret. The operator requires a NON-EMPTY
+      # password for database creation (it emits "PasswordSecretEmpty" and never
+      # runs create_db otherwise), so generate a random one at runtime and
+      # register it as a masked value so it never appears in logs.
+      - name: Create Vertica Superuser Password Secret
+        if: steps.license-check.outputs.run_k8s == 'true'
+        run: |
+          set -euo pipefail
+          SU_PASSWD="$(openssl rand -hex 16)"
+          echo "::add-mask::${SU_PASSWD}"
+          kubectl delete secret su-passwd -n my-verticadb-operator --ignore-not-found
+          kubectl create secret generic su-passwd \
+            -n my-verticadb-operator \
+            --from-literal=password="${SU_PASSWD}"
+
       # Install Vertica Operator
       - name: Install Vertica Operator
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           cat <<'EOF' > operator-values.yaml
           installCRDs: true
@@ -131,6 +204,7 @@ jobs:
 
       # Deploy VerticaDB with MinIO
       - name: Deploy VerticaDB
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           cat <<'EOF' | kubectl apply -f -
           apiVersion: vertica.com/v1
@@ -138,9 +212,13 @@ jobs:
           metadata:
             name: verticadb-sample
             namespace: my-verticadb-operator
+            annotations:
+              vertica.com/k-safety: "0"
           spec:
             image: opentext/vertica-k8s:latest
             dbName: vdb
+            licenseSecret: vertica-license
+            passwordSecret: su-passwd
             initPolicy: Create
             communal:
               path: s3://vertica-fleeting/mkottakota/
@@ -152,24 +230,54 @@ jobs:
               depotPath: /depot
             subclusters:
               - name: defaultsubcluster
-                size: 3
+                size: 1
           EOF
           kubectl annotate verticadb verticadb-sample -n my-verticadb-operator \
             vertica.com/ci-reconcile="$(date -u +%s)" --overwrite || true
 
       # Wait for Vertica readiness
       - name: Wait for Vertica readiness
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
+          set -euo pipefail
           NS=my-verticadb-operator
           SS=verticadb-sample-defaultsubcluster
           POD=${SS}-0
-          for i in {1..30}; do
-            kubectl get pod ${POD} -n ${NS} && break || sleep 10
+
+          # dbadmin now has a (non-empty) password from the su-passwd secret, so
+          # every SQL connection must supply it. Read it once and mask it.
+          SU_PASSWD=$(kubectl -n ${NS} get secret su-passwd -o jsonpath='{.data.password}' | base64 -d)
+          echo "::add-mask::${SU_PASSWD}"
+
+          # Wait for the operator to create the pod
+          for i in {1..60}; do
+            kubectl get pod ${POD} -n ${NS} >/dev/null 2>&1 && break || sleep 10
           done
-          kubectl wait --for=condition=Ready pod/${POD} -n ${NS} --timeout=5m || true
+
+          # Poll until the Vertica node is UP and accepting SQL connections.
+          # Image pull + create_db on the licensed image can take 10-20 min, so we
+          # print progress each iteration (instead of a silent `kubectl wait`) and
+          # gate directly on real SQL connectivity. No `|| true`: a genuine failure
+          # must fail here instead of leaking into "Configure Vertica Authentication".
+          DEADLINE=$((SECONDS + 1500))   # 25 minutes
+          until kubectl -n ${NS} exec ${POD} -c server -- \
+                  env VSQL_PASSWORD="${SU_PASSWD}" /opt/vertica/bin/vsql -U dbadmin -c "SELECT 1" >/dev/null 2>&1; do
+            if [ $SECONDS -ge $DEADLINE ]; then
+              echo "ERROR: Vertica did not accept SQL connections within 25m."
+              kubectl -n ${NS} get pods -o wide || true
+              kubectl -n ${NS} describe pod ${POD} || true
+              kubectl -n ${NS} describe verticadb verticadb-sample || true
+              exit 1
+            fi
+            echo "[$(date -u +%H:%M:%S)] Waiting for Vertica to accept connections..."
+            kubectl -n ${NS} get pod ${POD} -o wide 2>/dev/null || true
+            sleep 15
+          done
+          echo "Vertica is accepting SQL connections on port 5433."
 
       # Deploy Keycloak in K8s
       - name: Deploy Keycloak
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           kubectl create ns keycloak || true
           cat <<'EOF' | kubectl apply -f -
@@ -222,12 +330,14 @@ jobs:
 
       # Wait for Keycloak readiness
       - name: Wait for Keycloak readiness
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           kubectl -n keycloak rollout status deploy/keycloak --timeout=2m
           kubectl -n keycloak get pods -o wide
 
       # Configure Keycloak realm, client, and user
       - name: Configure Keycloak realm, client, and user
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           kubectl -n keycloak exec deploy/keycloak -- \
             /opt/keycloak/bin/kcadm.sh config credentials \
@@ -254,10 +364,13 @@ jobs:
 
       # Configure Vertica Authentication
       - name: Configure Vertica Authentication
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           NS=my-verticadb-operator
           POD=verticadb-sample-defaultsubcluster-0
-          kubectl -n ${NS} exec ${POD} -c server -- bash -c "
+          SU_PASSWD=$(kubectl -n ${NS} get secret su-passwd -o jsonpath='{.data.password}' | base64 -d)
+          echo "::add-mask::${SU_PASSWD}"
+          kubectl -n ${NS} exec ${POD} -c server -- env VSQL_PASSWORD="${SU_PASSWD}" bash -c "
             /opt/vertica/bin/vsql -U dbadmin -c \"
               CREATE AUTHENTICATION v_oauth METHOD 'oauth' HOST '0.0.0.0/0';
               ALTER AUTHENTICATION v_oauth SET client_id = 'vertica';
@@ -275,18 +388,23 @@ jobs:
 
       # Generate TLS certs on runner
       - name: Generate TLS certs on runner
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: ./resources/tests/genCerts.sh
 
       - name: Inspect server certificate SANs
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           openssl x509 -in resources/tests/ssl/server.crt -noout -text | grep -A1 "Subject Alternative Name"
 
       # Run Vertica SQL Go tests
       - name: Run Vertica SQL Go tests
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           NS=my-verticadb-operator
           SVC=verticadb-sample-defaultsubcluster
           LOCATOR="${SVC}.${NS}.svc.cluster.local:5433"
+          SU_PASSWD=$(kubectl -n ${NS} get secret su-passwd -o jsonpath='{.data.password}' | base64 -d)
+          echo "::add-mask::${SU_PASSWD}"
 
           WAIT_TIMEOUT=300
           INTERVAL=5
@@ -302,7 +420,7 @@ jobs:
           kubectl -n ${NS} exec -i go-test-runner -- mkdir -p /workspace
           tar cf - . | kubectl -n ${NS} exec -i go-test-runner -- tar xf - -C /workspace
 
-          kubectl -n ${NS} exec -i go-test-runner -- bash -c "
+          kubectl -n ${NS} exec -i go-test-runner -- env VERTICA_TEST_PASSWORD="${SU_PASSWD}" bash -c "
             set -euo pipefail
             cd /workspace
             go mod tidy
@@ -331,11 +449,14 @@ jobs:
 
       # Ebabling TLS & TLS Tests (server Mode)
       - name: Run TLS tests with Server mode
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           NS=my-verticadb-operator
           POD=verticadb-sample-defaultsubcluster-0
           LOCATOR="verticadb-sample-defaultsubcluster.${NS}.svc.cluster.local:5433"
-          kubectl -n ${NS} exec ${POD} -c server -- bash -c "
+          SU_PASSWD=$(kubectl -n ${NS} get secret su-passwd -o jsonpath='{.data.password}' | base64 -d)
+          echo "::add-mask::${SU_PASSWD}"
+          kubectl -n ${NS} exec ${POD} -c server -- env VSQL_PASSWORD="${SU_PASSWD}" bash -c "
             /opt/vertica/bin/vsql -U dbadmin -c \"
               CREATE CA CERTIFICATE root_ca AS '$(cat resources/tests/ssl/rootCA.crt)';
               CREATE KEY server_key TYPE 'RSA' AS '$(cat resources/tests/ssl/server.key)';
@@ -347,24 +468,27 @@ jobs:
 
             
           echo '=== Running TLS Tests (server mode) ==='
-          kubectl -n ${NS} exec -i go-test-runner -- bash -c "
+          kubectl -n ${NS} exec -i go-test-runner -- env VERTICA_TEST_PASSWORD="${SU_PASSWD}" bash -c "
             cd /workspace
             go test -v -race . -args --locator '${LOCATOR}' --user dbadmin --tlsmode=server
             go test -race . -args --locator '${LOCATOR}' --user dbadmin --tlsmode=server --use_prepared_statements=0
           "
 
       - name: Run Vertica SQL Go TLS custom tests
+        if: steps.license-check.outputs.run_k8s == 'true'
         run: |
           NS=my-verticadb-operator
           POD=verticadb-sample-defaultsubcluster-0
           LOCATOR="verticadb-sample-defaultsubcluster.${NS}.svc.cluster.local:5433"
+          SU_PASSWD=$(kubectl -n ${NS} get secret su-passwd -o jsonpath='{.data.password}' | base64 -d)
+          echo "::add-mask::${SU_PASSWD}"
 
             # Enabling TLS Mutual Mode
             kubectl -n ${NS} exec ${POD} -c server -- \
-              /opt/vertica/bin/vsql -U dbadmin -c \
+              env VSQL_PASSWORD="${SU_PASSWD}" /opt/vertica/bin/vsql -U dbadmin -c \
               "ALTER TLS CONFIGURATION server ADD CA CERTIFICATES root_ca TLSMODE 'VERIFY_CA';"
             
-            kubectl -n ${NS} exec -i go-test-runner -- bash -c "
+            kubectl -n ${NS} exec -i go-test-runner -- env VERTICA_TEST_PASSWORD="${SU_PASSWD}" bash -c "
             cd /workspace
             echo '=== Running TLS Tests (custom mode) ==='
             go test -v -race . -args --locator '${LOCATOR}' --user dbadmin --tlsmode=custom
@@ -372,10 +496,13 @@ jobs:
           "
           kubectl -n ${NS} delete pod go-test-runner --ignore-not-found=true
 
-      # Cleanup MinIO
+      # Cleanup MinIO and license artifacts
       - name: Uninstall MinIO
-        if: always()
+        if: always() && steps.license-check.outputs.run_k8s == 'true'
         run: |
+          kubectl -n my-verticadb-operator delete secret vertica-license --ignore-not-found || true
+          kubectl -n my-verticadb-operator delete secret su-passwd --ignore-not-found || true
+          rm -f /tmp/license.dat
           kubectl delete pod minio -n minio --ignore-not-found || true
           kubectl delete svc minio -n minio --ignore-not-found || true
           kubectl delete ns minio || true
