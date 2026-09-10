@@ -187,31 +187,27 @@ func TestUDSFCreateFunctionWithDollarQuoting(t *testing.T) {
 	defer connDB.Close()
 
 	// Clean up any existing function
-	cleanupSQL := `DROP FUNCTION IF EXISTS test_dollar_func(INT)`
+	cleanupSQL := `DROP FUNCTION IF EXISTS test_dollar_func()`
 	_, _ = connDB.ExecContext(ctx, cleanupSQL)
 
-	// Create a function with dollar-quoted body
-	createSQL := `CREATE FUNCTION test_dollar_func(int_param INT)
-	RETURN INT AS
+	// Create a function that uses a dollar-quoted string literal
+	createSQL := `CREATE FUNCTION test_dollar_func()
+	RETURN VARCHAR AS
 	BEGIN
-		RETURN (CASE
-			WHEN int_param < 0 THEN -1
-			WHEN int_param = 0 THEN 0
-			ELSE 1
-		END);
+		RETURN $$value with; semicolon$$;
 	END`
 
 	_, err = connDB.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
 	t.Cleanup(func() {
-		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_dollar_func(INT)`)
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_dollar_func()`)
 	})
 
 	// Verify the function works
-	var result int
-	err = connDB.QueryRowContext(ctx, `SELECT test_dollar_func(5)`).Scan(&result)
+	var result string
+	err = connDB.QueryRowContext(ctx, `SELECT test_dollar_func()`).Scan(&result)
 	assertNoErr(t, err)
-	assertEqual(t, result, 1)
+	assertEqual(t, result, "value with; semicolon")
 }
 
 // TestUDSFAlterFunction verifies that ALTER FUNCTION statements are executed
@@ -763,12 +759,12 @@ func TestUDSFNullHandling(t *testing.T) {
 	}
 }
 
-// TestUDSFTransactionHandling verifies that UDSF CREATE FUNCTION executes
-// correctly when routed through *sql.Tx.
+// TestUDSFTransactionCommit verifies that UDSF CREATE FUNCTION executes
+// correctly when routed through *sql.Tx and committed.
 // Given: A transaction context created by BeginTx
 // When: CREATE FUNCTION is executed via tx.ExecContext and the transaction is committed
 // Then: The function is callable afterward, confirming the driver path works with *sql.Tx
-func TestUDSFTransactionHandling(t *testing.T) {
+func TestUDSFTransactionCommit(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
@@ -792,13 +788,13 @@ func TestUDSFTransactionHandling(t *testing.T) {
 	END`
 	_, err = tx.ExecContext(ctx, createSQL)
 	assertNoErr(t, err)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_tx_func()`)
+	})
 
 	// Commit transaction
 	err = tx.Commit()
 	assertNoErr(t, err)
-	t.Cleanup(func() {
-		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_tx_func()`)
-	})
 
 	// Verify function exists after commit
 	var result int

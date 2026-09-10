@@ -33,6 +33,8 @@ package vertigo
 // THE SOFTWARE.
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -666,29 +668,35 @@ func TestUDSFAnalyzer_LeadingWhitespace(t *testing.T) {
 func TestUDSFAnalyzer_RejectsUDSFWhenAnotherStatementFollows(t *testing.T) {
 	analyzer := NewUDSFAnalyzer()
 
-	sql := "DROP FUNCTION foo(); SELECT 1;"
-
-	if analyzer.IsUDSFStatement(sql) {
-		t.Errorf("IsUDSFStatement(%q) = true, want false", sql)
+	tests := []string{
+		"DROP FUNCTION foo(); SELECT 1;",
+		"DROP FUNCTION IF EXISTS foo(); SELECT 1;",
 	}
 
-	if analyzer.ShouldTreatAsAtomicUnit(sql) {
-		t.Errorf("ShouldTreatAsAtomicUnit(%q) = true, want false", sql)
-	}
+	for _, sql := range tests {
+		if analyzer.IsUDSFStatement(sql) {
+			t.Errorf("IsUDSFStatement(%q) = true, want false", sql)
+		}
 
-	stmtType, err := analyzer.GetStatementType(sql)
-	if err != nil {
-		t.Fatalf("GetStatementType(%q) returned unexpected error: %v", sql, err)
-	}
-	if stmtType != UDSFStatementTypeDropFunction {
-		t.Errorf("GetStatementType(%q) = %v, want %v", sql, stmtType, UDSFStatementTypeDropFunction)
+		if analyzer.ShouldTreatAsAtomicUnit(sql) {
+			t.Errorf("ShouldTreatAsAtomicUnit(%q) = true, want false", sql)
+		}
+
+		stmtType, err := analyzer.GetStatementType(sql)
+		if err != nil {
+			t.Fatalf("GetStatementType(%q) returned unexpected error: %v", sql, err)
+		}
+		if stmtType != UDSFStatementTypeDropFunction {
+			t.Errorf("GetStatementType(%q) = %v, want %v", sql, stmtType, UDSFStatementTypeDropFunction)
+		}
 	}
 }
 
 func TestUDSFAnalyzer_AllowsNestedControlFlowInBeginEndBlock(t *testing.T) {
 	analyzer := NewUDSFAnalyzer()
 
-	sql := `CREATE OR REPLACE FUNCTION nested_flow_test()
+	tests := []string{
+		`CREATE OR REPLACE FUNCTION nested_flow_test()
 	RETURN INT AS
 	BEGIN
 		IF 1 = 1 THEN
@@ -697,22 +705,33 @@ func TestUDSFAnalyzer_AllowsNestedControlFlowInBeginEndBlock(t *testing.T) {
 			END LOOP;
 		END IF;
 		RETURN CASE WHEN 1 = 1 THEN 1 ELSE 0 END;
-	END;`
-
-	if !analyzer.IsUDSFStatement(sql) {
-		t.Errorf("IsUDSFStatement should recognize nested control-flow function body")
+	END;`,
+		`CREATE OR REPLACE FUNCTION nested_if_not_test()
+	RETURN INT AS
+	BEGIN
+		IF NOT (1 = 0) THEN
+			RETURN 1;
+		END IF;
+		RETURN 0;
+	END;`,
 	}
 
-	if !analyzer.ShouldTreatAsAtomicUnit(sql) {
-		t.Errorf("ShouldTreatAsAtomicUnit should keep nested control-flow function body atomic")
-	}
+	for _, sql := range tests {
+		if !analyzer.IsUDSFStatement(sql) {
+			t.Errorf("IsUDSFStatement should recognize nested control-flow function body: %q", sql)
+		}
 
-	stmtType, err := analyzer.GetStatementType(sql)
-	if err != nil {
-		t.Fatalf("GetStatementType returned unexpected error: %v", err)
-	}
-	if stmtType != UDSFStatementTypeCreateFunction {
-		t.Errorf("GetStatementType = %v, want %v", stmtType, UDSFStatementTypeCreateFunction)
+		if !analyzer.ShouldTreatAsAtomicUnit(sql) {
+			t.Errorf("ShouldTreatAsAtomicUnit should keep nested control-flow function body atomic: %q", sql)
+		}
+
+		stmtType, err := analyzer.GetStatementType(sql)
+		if err != nil {
+			t.Fatalf("GetStatementType returned unexpected error: %v", err)
+		}
+		if stmtType != UDSFStatementTypeCreateFunction {
+			t.Errorf("GetStatementType = %v, want %v", stmtType, UDSFStatementTypeCreateFunction)
+		}
 	}
 }
 
@@ -768,4 +787,56 @@ func TestUDSFAnalyzer_DoubleSlashIsNotSQLComment(t *testing.T) {
 	if analyzer.ShouldTreatAsAtomicUnit(sql) {
 		t.Errorf("ShouldTreatAsAtomicUnit(%q) = true, want false", sql)
 	}
+}
+
+func BenchmarkUDSFAnalyzer_IsUDSFStatement_LargeFunction(b *testing.B) {
+	analyzer := NewUDSFAnalyzer()
+	sql := buildLargeUDSFFunctionSQL(300, false)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		if !analyzer.IsUDSFStatement(sql) {
+			b.Fatal("expected true for large single-statement function")
+		}
+	}
+}
+
+func BenchmarkUDSFAnalyzer_IsUDSFStatement_LargeFunctionWithTrailingStatement(b *testing.B) {
+	analyzer := NewUDSFAnalyzer()
+	sql := buildLargeUDSFFunctionSQL(300, true)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		if analyzer.IsUDSFStatement(sql) {
+			b.Fatal("expected false for function followed by another statement")
+		}
+	}
+}
+
+func buildLargeUDSFFunctionSQL(blocks int, withTrailingStatement bool) string {
+	var sb strings.Builder
+	sb.Grow(64 + blocks*140)
+
+	sb.WriteString("CREATE OR REPLACE FUNCTION benchmark_func()\n")
+	sb.WriteString("RETURN INT AS\n")
+	sb.WriteString("BEGIN\n")
+
+	for i := 0; i < blocks; i++ {
+		sb.WriteString(fmt.Sprintf("\tIF NOT (%d = 0) THEN\n", i))
+		sb.WriteString("\t\tRETURN CASE WHEN 1 = 1 THEN 1 ELSE 0 END;\n")
+		sb.WriteString("\tEND IF;\n")
+	}
+
+	sb.WriteString("\tRETURN 0;\n")
+	sb.WriteString("END;")
+
+	if withTrailingStatement {
+		sb.WriteString(" SELECT 1;")
+	}
+
+	return sb.String()
 }

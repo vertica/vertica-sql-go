@@ -162,18 +162,31 @@ func (ua *UDSFAnalyzer) hasSingleTopLevelStatement(statement string) bool {
 	prevToken := ""
 	var current strings.Builder
 
-	flushToken := func() {
+	flushToken := func(nextTokenStart int) {
 		if current.Len() == 0 {
 			return
 		}
 
 		token := strings.ToUpper(current.String())
+		nextToken := ""
+		if nextTokenStart < len(statement) {
+			if lookaheadToken, ok := ua.nextTopLevelToken(statement, nextTokenStart); ok {
+				nextToken = lookaheadToken
+			}
+		}
+
 		switch token {
 		case "BEGIN":
 			depth++
-		case "CASE", "IF", "LOOP", "WHILE":
+		case "CASE", "LOOP", "WHILE":
 			// Avoid counting the trailing keyword in END CASE/IF/LOOP/WHILE.
 			if prevToken != "END" {
+				depth++
+			}
+		case "IF":
+			// Treat FUNCTION IF EXISTS / FUNCTION IF NOT EXISTS as DDL modifiers, not block openers.
+			isFunctionDDLModifier := prevToken == "FUNCTION" && (nextToken == "EXISTS" || nextToken == "NOT")
+			if prevToken != "END" && !isFunctionDDLModifier {
 				depth++
 			}
 		case "END":
@@ -235,19 +248,19 @@ func (ua *UDSFAnalyzer) hasSingleTopLevelStatement(statement string) bool {
 		}
 
 		if ch == '\'' {
-			flushToken()
+			flushToken(i)
 			inSingleQuote = true
 			continue
 		}
 
 		if ch == '"' {
-			flushToken()
+			flushToken(i)
 			inDoubleQuote = true
 			continue
 		}
 
 		if ch == '-' && i+1 < len(statement) && statement[i+1] == '-' {
-			flushToken()
+			flushToken(i)
 			i++
 			inLineComment = true
 			continue
@@ -256,7 +269,7 @@ func (ua *UDSFAnalyzer) hasSingleTopLevelStatement(statement string) bool {
 		if ch == '/' && i+1 < len(statement) {
 			next := statement[i+1]
 			if next == '*' {
-				flushToken()
+				flushToken(i)
 				i++
 				inBlockComment = true
 				continue
@@ -265,7 +278,7 @@ func (ua *UDSFAnalyzer) hasSingleTopLevelStatement(statement string) bool {
 
 		if ch == '$' {
 			if tag, length, ok := ua.readDollarTag(statement, i); ok {
-				flushToken()
+				flushToken(i)
 				dollarTag = tag
 				i += length - 1
 				continue
@@ -273,9 +286,11 @@ func (ua *UDSFAnalyzer) hasSingleTopLevelStatement(statement string) bool {
 		}
 
 		if ch == ';' {
-			flushToken()
-			if depth == 0 && len(ua.tokenizeTopLevel(statement[i+1:])) > 0 {
-				return false
+			flushToken(i)
+			if depth == 0 {
+				if _, ok := ua.nextTopLevelToken(statement, i+1); ok {
+					return false
+				}
 			}
 			continue
 		}
@@ -285,11 +300,144 @@ func (ua *UDSFAnalyzer) hasSingleTopLevelStatement(statement string) bool {
 			continue
 		}
 
-		flushToken()
+		flushToken(i)
 	}
 
-	flushToken()
+	flushToken(len(statement))
 	return true
+}
+
+// nextTopLevelToken returns the first top-level token at or after start while
+// respecting quoted strings, comments, and dollar-quoted literals.
+func (ua *UDSFAnalyzer) nextTopLevelToken(statement string, start int) (string, bool) {
+	inSingleQuote := false
+	inDoubleQuote := false
+	inLineComment := false
+	inBlockComment := false
+	dollarTag := ""
+
+	var current strings.Builder
+
+	flushCurrent := func() (string, bool) {
+		if current.Len() == 0 {
+			return "", false
+		}
+		token := strings.ToUpper(current.String())
+		current.Reset()
+		return token, true
+	}
+
+	for i := start; i < len(statement); i++ {
+		ch := statement[i]
+
+		if inLineComment {
+			if ch == '\n' || ch == '\r' {
+				inLineComment = false
+			}
+			continue
+		}
+
+		if inBlockComment {
+			if ch == '*' && i+1 < len(statement) && statement[i+1] == '/' {
+				i++
+				inBlockComment = false
+			}
+			continue
+		}
+
+		if inSingleQuote {
+			if ch == '\'' {
+				if i+1 < len(statement) && statement[i+1] == '\'' {
+					i++
+					continue
+				}
+				inSingleQuote = false
+			}
+			continue
+		}
+
+		if inDoubleQuote {
+			if ch == '"' {
+				if i+1 < len(statement) && statement[i+1] == '"' {
+					i++
+					continue
+				}
+				inDoubleQuote = false
+			}
+			continue
+		}
+
+		if dollarTag != "" {
+			if i+len(dollarTag) <= len(statement) && statement[i:i+len(dollarTag)] == dollarTag {
+				i += len(dollarTag) - 1
+				dollarTag = ""
+			}
+			continue
+		}
+
+		if ch == '\'' {
+			if token, ok := flushCurrent(); ok {
+				return token, true
+			}
+			inSingleQuote = true
+			continue
+		}
+
+		if ch == '"' {
+			if token, ok := flushCurrent(); ok {
+				return token, true
+			}
+			inDoubleQuote = true
+			continue
+		}
+
+		if ch == '-' && i+1 < len(statement) && statement[i+1] == '-' {
+			if token, ok := flushCurrent(); ok {
+				return token, true
+			}
+			i++
+			inLineComment = true
+			continue
+		}
+
+		if ch == '/' && i+1 < len(statement) {
+			next := statement[i+1]
+			if next == '*' {
+				if token, ok := flushCurrent(); ok {
+					return token, true
+				}
+				i++
+				inBlockComment = true
+				continue
+			}
+		}
+
+		if ch == '$' {
+			if tag, length, ok := ua.readDollarTag(statement, i); ok {
+				if token, ok := flushCurrent(); ok {
+					return token, true
+				}
+				dollarTag = tag
+				i += length - 1
+				continue
+			}
+		}
+
+		if isTokenChar(ch) {
+			current.WriteByte(ch)
+			continue
+		}
+
+		if token, ok := flushCurrent(); ok {
+			return token, true
+		}
+	}
+
+	if token, ok := flushCurrent(); ok {
+		return token, true
+	}
+
+	return "", false
 }
 
 // GetStatementType determines the type of the given SQL statement.
