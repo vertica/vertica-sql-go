@@ -72,6 +72,7 @@ type stmt struct {
 	command      string
 	preparedName string
 	parseState   parseState
+	isAtomicStmt bool
 	namedArgPos  []string
 	posArgCnt    int
 	paramTypes   []common.ParameterType
@@ -81,13 +82,22 @@ type stmt struct {
 	multiStatements bool
 }
 
-
 func newStmt(connection *connection, command string) (*stmt, error) {
 	s := &stmt{
 		conn:         connection,
 		command:      command,
 		preparedName: fmt.Sprintf("S%d%d%d", os.Getpid(), time.Now().Unix(), rand.Int31()),
 		parseState:   parseStateUnparsed,
+	}
+
+	// Atomic statements (UDSF function DDL and function EXECUTE privilege statements)
+	// must bypass the splitter to preserve semantics.
+	analyzer := NewUDSFAnalyzer()
+	s.isAtomicStmt = analyzer.ShouldTreatAsAtomicUnit(command)
+	if s.isAtomicStmt {
+		// Atomic statement: treat as single statement, no splitting
+		s.multiStatements = false
+		return s, nil
 	}
 
 	initialStatements := parse.SplitStatements(command)
@@ -308,6 +318,16 @@ func (s *stmt) QueryContextRaw(ctx context.Context, baseArgs []driver.NamedValue
 	interpolated, err := s.interpolate(args)
 	if err != nil {
 		return newEmptyRows(), err
+	}
+
+	// Atomic statements (UDSF function DDL and function EXECUTE privilege statements)
+	// may include syntax that should not be split before execution.
+	if s.isAtomicStmt {
+		resultSet, runErr := s.runSimpleStatement(ctx, strings.TrimSpace(interpolated))
+		if runErr != nil {
+			return newEmptyRows(), runErr
+		}
+		return resultSet, nil
 	}
 
 	statements := parse.SplitStatements(interpolated)
@@ -587,14 +607,20 @@ func (s *stmt) evaluateErrorMsg(msg *msgs.BEErrorMsg) error {
 }
 
 // isLocalCopyStatement reports whether the statement is a COPY ... FROM LOCAL ...
-// command. Such statements must use the simple query protocol because the server
-// enters the GetLocalFileInfo state immediately after FEExecuteMsg is processed,
-// making the trailing FEFlushMsg sent by bindAndExecute invalid in that state.
+// command or an atomic statement. Such statements must use the simple query protocol because
+// the server enters special states (GetLocalFileInfo for COPY LOCAL, or function parsing for UDSF)
+// immediately after FEExecuteMsg is processed, making the trailing FEFlushMsg sent by
+// bindAndExecute invalid in those states.
 func (s *stmt) isLocalCopyStatement() bool {
+	if s.isAtomicStmt {
+		return true
+	}
+
 	statements := parse.SplitStatements(s.command)
 	if len(statements) != 1 {
 		return false
 	}
+
 	_, ok := analyzeLocalCopyStatement(statements[0])
 	return ok
 }
@@ -755,12 +781,6 @@ func topLevelSQLTokens(statement string) []sqlToken {
 				flushCurrent()
 				i++
 				inBlockComment = true
-				continue
-			}
-			if next == '/' {
-				flushCurrent()
-				i++
-				inLineComment = true
 				continue
 			}
 		}

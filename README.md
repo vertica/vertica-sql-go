@@ -319,6 +319,31 @@ The following transaction isolation levels are supported:
 
  <b>&#8224;</b> Although Vertica supports the grammars for these transaction isolation levels, they are internally promoted to stronger isolation levels.
 
+## UDSF Statements Supported
+
+vertica-sql-go supports executing Vertica user-defined SQL function statements as atomic units without splitting the function body.
+For UDSF syntax and server-side behavior, see the Vertica documentation: [User-defined SQL functions](https://docs.vertica.com/26.2.x/en/extending/user-defined-sql-functions/).
+
+Supported statement forms:
+
+* `CREATE FUNCTION ...`
+* `ALTER FUNCTION ...`
+* `DROP FUNCTION ...`
+* `GRANT EXECUTE ON FUNCTION ...`
+* `REVOKE EXECUTE ON FUNCTION ...`
+
+Example:
+
+```go
+createSQL := `CREATE FUNCTION test_simple_func()
+    RETURN INT AS
+    BEGIN
+        RETURN 42;
+    END`
+
+_, err = connDB.ExecContext(ctx, createSQL)
+```
+
 ## COPY modes Supported
 
 ### COPY FROM STDIN

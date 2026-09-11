@@ -267,6 +267,16 @@ func TestNumInput(t *testing.T) {
 			query:    `CREATE TABLE "user@2024" (user_id INT)`,
 			expected: 0,
 		},
+		{
+			name:     "udsf ddl positional placeholder is not parsed",
+			query:    `ALTER FUNCTION my_func(INT) OWNER TO ?`,
+			expected: 0,
+		},
+		{
+			name:     "atomic privilege positional placeholder is not parsed",
+			query:    `GRANT EXECUTE ON FUNCTION my_func(INT) TO ?`,
+			expected: 0,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -274,6 +284,57 @@ func TestNumInput(t *testing.T) {
 			result := stmt.NumInput()
 			if result != tc.expected {
 				t.Errorf("Expected %d query inputs, got %d", tc.expected, result)
+			}
+		})
+	}
+}
+
+func TestNewStmtAtomicClassification(t *testing.T) {
+	tests := []struct {
+		name           string
+		query          string
+		expectAtomic   bool
+		expectMultiStmt bool
+	}{
+		{
+			name:           "create function is atomic",
+			query:          `CREATE FUNCTION test_func() RETURN INT AS BEGIN RETURN 1; END`,
+			expectAtomic:   true,
+			expectMultiStmt: false,
+		},
+		{
+			name:           "grant execute on function is atomic",
+			query:          `GRANT EXECUTE ON FUNCTION test_func() TO role1`,
+			expectAtomic:   true,
+			expectMultiStmt: false,
+		},
+		{
+			name:           "grant usage on schema is not atomic",
+			query:          `GRANT USAGE ON SCHEMA test_schema TO role1`,
+			expectAtomic:   false,
+			expectMultiStmt: false,
+		},
+		{
+			name:           "udsf-like first statement in batch is not atomic",
+			query:          `DROP FUNCTION test_func(); SELECT 1;`,
+			expectAtomic:   false,
+			expectMultiStmt: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := newStmt(nil, tc.query)
+			if err != nil {
+				t.Fatalf("newStmt returned error: %v", err)
+			}
+
+			if s.isAtomicStmt != tc.expectAtomic {
+				t.Fatalf("isAtomicStmt = %v, want %v", s.isAtomicStmt, tc.expectAtomic)
+			}
+
+			if s.multiStatements != tc.expectMultiStmt {
+				t.Fatalf("multiStatements = %v, want %v", s.multiStatements, tc.expectMultiStmt)
 			}
 		})
 	}
@@ -311,6 +372,11 @@ func TestIsLocalCopyStatementVariants(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "double slash is not comment between from and local",
+			query:    "COPY t1 FROM //note\nLOCAL '/tmp/copy_functionality_files/f1.csv' DELIMITER ',';",
+			expected: false,
+		},
+		{
 			name: "multiple local files",
 			query: "COPY local_file_tests FROM LOCAL '/home/release/siva/mountains.json', "+
 				"'/home/release/siva/mountains1.json' PARSER FJSONPARSER() REJECTED DATA AS TABLE local_file_tests_rejects;",
@@ -324,6 +390,21 @@ func TestIsLocalCopyStatementVariants(t *testing.T) {
 		{
 			name:     "multiple statements",
 			query:    "SELECT 1; COPY t1 FROM LOCAL '/tmp/copy_functionality_files/f1.csv';",
+			expected: false,
+		},
+		{
+			name:     "create function treated as atomic simple-protocol statement",
+			query:    "CREATE FUNCTION test_func() RETURN INT AS BEGIN RETURN 1; END",
+			expected: true,
+		},
+		{
+			name:     "grant execute on function treated as atomic simple-protocol statement",
+			query:    "GRANT EXECUTE ON FUNCTION test_func() TO role1",
+			expected: true,
+		},
+		{
+			name:     "grant usage on schema is not forced to simple-protocol statement",
+			query:    "GRANT USAGE ON SCHEMA test_schema TO role1",
 			expected: false,
 		},
 	}
