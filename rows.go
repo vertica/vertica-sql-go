@@ -86,6 +86,9 @@ func (r *rows) Columns() []string {
 // Close closes the read cursor
 // Interface: driver.Rows
 func (r *rows) Close() error {
+	if r == nil || r.resultData == nil {
+		return nil
+	}
 	return r.resultData.Close()
 }
 
