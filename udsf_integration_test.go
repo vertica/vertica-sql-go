@@ -933,3 +933,103 @@ func TestUDSFFormattingInlineComments(t *testing.T) {
 	assertNoErr(t, err)
 	assertEqual(t, result, 13)
 }
+
+// TestUDSFCreateFunctionMultiStatementBatch verifies that CREATE FUNCTION can be
+// sent together with a following SELECT in one SQL string on the simple-query path.
+func TestUDSFCreateFunctionMultiStatementBatch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	simpleConnStr := strings.Replace(myDBConnectString, "use_prepared_statements=1", "use_prepared_statements=0", 1)
+	connDB, err := sql.Open("vertica", simpleConnStr)
+	assertNoErr(t, err)
+	defer connDB.Close()
+
+	_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_multistmt_udsf_batch(INT)`)
+	t.Cleanup(func() {
+		_, _ = connDB.ExecContext(ctx, `DROP FUNCTION IF EXISTS test_multistmt_udsf_batch(INT)`)
+	})
+
+	batchSQL := `CREATE FUNCTION test_multistmt_udsf_batch(x INT)
+	RETURN INT AS
+	BEGIN
+		/* This semicolon; must stay inside the function body. */
+		RETURN CASE
+			WHEN x >= 0 THEN
+				CASE
+					WHEN x >= 10 THEN x + 1
+					ELSE x + 2
+				END
+			ELSE
+				CASE
+					WHEN x <= -10 THEN x - 1
+					ELSE x - 2
+				END
+		END;
+	END;
+	SELECT CURRENT_USER();`
+
+	rows, err := connDB.QueryContext(ctx, batchSQL)
+	assertNoErr(t, err)
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	assertNoErr(t, err)
+	if len(columns) != 0 {
+		t.Fatalf("expected CREATE FUNCTION result set to have no columns, got %v", columns)
+	}
+	if rows.Next() {
+		t.Fatal("unexpected row returned for CREATE FUNCTION result set")
+	}
+	assertNoErr(t, rows.Err())
+
+	if !rows.NextResultSet() {
+		t.Fatal("expected trailing SELECT CURRENT_USER() result set")
+	}
+
+	columns, err = rows.Columns()
+	assertNoErr(t, err)
+	if len(columns) != 1 || !strings.EqualFold(columns[0], "current_user") {
+		t.Fatalf("unexpected trailing SELECT columns: %v", columns)
+	}
+
+	if !rows.Next() {
+		t.Fatal("expected one row from SELECT CURRENT_USER()")
+	}
+
+	var currentUser string
+	err = rows.Scan(&currentUser)
+	assertNoErr(t, err)
+	if strings.TrimSpace(currentUser) == "" {
+		t.Fatal("CURRENT_USER() returned an empty value")
+	}
+	if rows.Next() {
+		t.Fatal("unexpected extra row from SELECT CURRENT_USER()")
+	}
+	assertNoErr(t, rows.Err())
+	if rows.NextResultSet() {
+		t.Fatal("unexpected extra result set after SELECT CURRENT_USER()")
+	}
+
+	testCases := []struct {
+		input    int
+		expected int
+	}{
+		{input: 12, expected: 13},
+		{input: 5, expected: 7},
+		{input: -12, expected: -13},
+		{input: -5, expected: -7},
+	}
+
+	for _, tc := range testCases {
+		var got int
+		err = connDB.QueryRowContext(
+			ctx,
+			`SELECT test_multistmt_udsf_batch(?)`,
+			tc.input,
+		).Scan(&got)
+		assertNoErr(t, err)
+		assertEqual(t, got, tc.expected)
+	}
+}

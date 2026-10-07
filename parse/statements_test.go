@@ -52,6 +52,47 @@ SELECT 1; /* block;comment */ SELECT 2;`,
 			query:    "SELECT 1; // comment about next\nSELECT 2;",
 			expected: []string{"SELECT 1", "// comment about next\nSELECT 2"},
 		},
+		{
+			name: "create function with nested control flow followed by select",
+			query: `CREATE FUNCTION test_multistmt_udsf_batch(x INT)
+	RETURN INT AS
+	BEGIN
+		/* This semicolon; must stay inside the function body. */
+		RETURN CASE
+			WHEN x >= 0 THEN
+				CASE
+					WHEN x >= 10 THEN x + 1
+					ELSE x + 2
+				END
+			ELSE
+				CASE
+					WHEN x <= -10 THEN x - 1
+					ELSE x - 2
+				END
+		END;
+	END;
+	SELECT CURRENT_USER();`,
+			expected: []string{
+				`CREATE FUNCTION test_multistmt_udsf_batch(x INT)
+	RETURN INT AS
+	BEGIN
+		/* This semicolon; must stay inside the function body. */
+		RETURN CASE
+			WHEN x >= 0 THEN
+				CASE
+					WHEN x >= 10 THEN x + 1
+					ELSE x + 2
+				END
+			ELSE
+				CASE
+					WHEN x <= -10 THEN x - 1
+					ELSE x - 2
+				END
+		END;
+	END`,
+				`SELECT CURRENT_USER()`,
+			},
+		},
 	}
 
 	for _, tc := range testCases {
