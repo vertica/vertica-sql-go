@@ -68,6 +68,12 @@ func registerBackEndMsgType(msgType byte, bem BackEndMsg) {
 
 // CreateBackEndMsg docs
 func CreateBackEndMsg(msgType byte, body []byte) (BackEndMsg, error) {
+	if msgType == 'D' {
+		rowBytes := make([]byte, len(body))
+		copy(rowBytes, body)
+		res := BEDataRowMsg(rowBytes)
+		return &res, nil
+	}
 	if bem, ok := backEndMsgTypeMap[msgType]; ok {
 		buffer := NewMsgBufferFromBytes(body)
 		newMsg, err := bem.CreateFromMsgBody(buffer)

@@ -41,6 +41,7 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"net/url"
@@ -102,6 +103,7 @@ type connection struct {
 	driver.Conn
 
 	conn             net.Conn
+	reader           io.Reader
 	connURL          *url.URL
 	parameters       map[string]string
 	clientPID        int
@@ -303,6 +305,8 @@ func newConnection(connString string) (*connection, error) {
 		}
 	}
 
+	result.reader = bufio.NewReaderSize(result.conn, 128*1024)
+
 	if err = result.handshake(); err != nil {
 		return nil, err
 	}
@@ -384,8 +388,10 @@ func (v *connection) recvMessage() (msgs.BackEndMsg, error) {
 
 	// Print the message to stdout (for debugging purposes)
 	if _, drm := bem.(*msgs.BEDataRowMsg); !drm {
-		connectionLogger.Debug("<- " + bem.String())
-	} else {
+		if connectionLogger.IsDebug() {
+			connectionLogger.Debug("<- " + bem.String())
+		}
+	} else if connectionLogger.IsTrace() {
 		connectionLogger.Trace("<- " + bem.String())
 	}
 
@@ -583,21 +589,12 @@ func (v *connection) defaultMessageHandler(bMsg msgs.BackEndMsg) (bool, error) {
 }
 
 func (v *connection) readAll(buf []byte) error {
-	readIndex := 0
-
-	for {
-		bytesRead, err := v.conn.Read(buf[readIndex:])
-
-		if err != nil {
-			return err
-		}
-
-		readIndex += bytesRead
-
-		if readIndex == len(buf) {
-			return nil
-		}
+	r := v.reader
+	if r == nil {
+		r = v.conn
 	}
+	_, err := io.ReadFull(r, buf)
+	return err
 }
 
 func (v *connection) balanceLoad() error {
