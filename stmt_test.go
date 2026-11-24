@@ -34,9 +34,14 @@ package vertigo
 
 import (
 	"bytes"
+	"context"
+	"crypto/rand"
+	"database/sql"
 	"database/sql/driver"
 	"encoding/binary"
+	"fmt"
 	"io"
+	"net/url"
 	"testing"
 	"time"
 
@@ -320,6 +325,24 @@ func TestNewStmtAtomicClassification(t *testing.T) {
 			expectAtomic:   false,
 			expectMultiStmt: true,
 		},
+		{
+			name:            "schema if not exists batch is multi-statement",
+			query:           `CREATE SCHEMA IF NOT EXISTS banking; CREATE SCHEMA IF NOT EXISTS domain;`,
+			expectAtomic:    false,
+			expectMultiStmt: true,
+		},
+		{
+			name:            "schema and table batch is multi-statement",
+			query:           `CREATE SCHEMA IF NOT EXISTS banking; CREATE TABLE banking.branches_test2 (branch_id INTEGER NOT NULL);`,
+			expectAtomic:    false,
+			expectMultiStmt: true,
+		},
+		{
+			name:            "function and schema batch is multi-statement",
+			query:           `DROP FUNCTION IF EXISTS foo(); CREATE SCHEMA IF NOT EXISTS banking;`,
+			expectAtomic:    false,
+			expectMultiStmt: true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -335,6 +358,89 @@ func TestNewStmtAtomicClassification(t *testing.T) {
 
 			if s.multiStatements != tc.expectMultiStmt {
 				t.Fatalf("multiStatements = %v, want %v", s.multiStatements, tc.expectMultiStmt)
+			}
+		})
+	}
+}
+
+func TestSchemaIfNotExistsBatchIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	for _, prepared := range []string{"1", "0"} {
+		t.Run("use_prepared_statements="+prepared, func(t *testing.T) {
+			connURL, err := url.Parse(myDBConnectString)
+			if err != nil {
+				t.Fatal(err)
+			}
+			params := connURL.Query()
+			params.Set("use_prepared_statements", prepared)
+			connURL.RawQuery = params.Encode()
+			db, err := sql.Open("vertica", connURL.String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := db.Close(); err != nil {
+					t.Errorf("close database: %v", err)
+				}
+			})
+
+			var suffix [12]byte
+			if _, err := rand.Read(suffix[:]); err != nil {
+				t.Fatal(err)
+			}
+			schema1 := fmt.Sprintf("go_if_exists_%x_a", suffix)
+			schema2 := fmt.Sprintf("go_if_exists_%x_b", suffix)
+			t.Cleanup(func() {
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				for _, schema := range []string{schema1, schema2} {
+					if _, err := db.ExecContext(cleanupCtx, "DROP SCHEMA IF EXISTS "+schema+" CASCADE"); err != nil {
+						t.Errorf("cleanup schema %s: %v", schema, err)
+					}
+				}
+			})
+
+			testCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			batch := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s;CREATE SCHEMA IF NOT EXISTS %s;", schema1, schema2)
+			for i := 0; i < 2; i++ {
+				if _, err := db.ExecContext(testCtx, batch); err != nil {
+					t.Fatalf("execute schema batch (attempt %d): %v", i+1, err)
+				}
+			}
+
+			var count int
+			if err := db.QueryRowContext(testCtx, "SELECT COUNT(*) FROM v_catalog.schemata WHERE schema_name IN (?, ?)", schema1, schema2).Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			if count != 2 {
+				t.Fatalf("created %d schemas, want 2", count)
+			}
+
+			batch = fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s;
+CREATE TABLE %s.branches (
+    branch_id         INTEGER       NOT NULL,
+    branch_code       VARCHAR(10)   NOT NULL,
+    branch_name       VARCHAR(100)  NOT NULL,
+    city              VARCHAR(50)   NOT NULL,
+    state             VARCHAR(50)   NOT NULL,
+    ifsc_code         VARCHAR(15)   NOT NULL,
+    established_date  DATE          NOT NULL,
+    phone             VARCHAR(15),
+    email             VARCHAR(100),
+    is_active         BOOLEAN       NOT NULL DEFAULT TRUE,
+    CONSTRAINT pk_branches PRIMARY KEY (branch_id) ENABLED
+)
+ORDER BY branch_id
+SEGMENTED BY HASH(branch_id) ALL NODES;`, schema1, schema1)
+			if _, err := db.ExecContext(testCtx, batch); err != nil {
+				t.Fatalf("execute schema and table batch: %v", err)
+			}
+			if err := db.QueryRowContext(testCtx, "SELECT COUNT(*) FROM "+schema1+".branches").Scan(&count); err != nil {
+				t.Fatalf("query created table: %v", err)
 			}
 		})
 	}

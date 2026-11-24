@@ -22,6 +22,46 @@ func TestSplitStatements(t *testing.T) {
 			expected: []string{"SELECT 1", "SELECT 2", "SELECT 3"},
 		},
 		{
+			name:     "multiple schemas with if not exists",
+			query:    "CREATE SCHEMA IF NOT EXISTS banking;CREATE SCHEMA IF NOT EXISTS domain;",
+			expected: []string{"CREATE SCHEMA IF NOT EXISTS banking", "CREATE SCHEMA IF NOT EXISTS domain"},
+		},
+		{
+			name:     "single schema without trailing semicolon",
+			query:    "CREATE SCHEMA IF NOT EXISTS banking",
+			expected: []string{"CREATE SCHEMA IF NOT EXISTS banking"},
+		},
+		{
+			name:     "schema and table with if not exists",
+			query:    "create schema /* comment */ if not exists banking;\nCREATE TABLE IF NOT EXISTS banking.branches (id INT);",
+			expected: []string{"create schema /* comment */ if not exists banking", "CREATE TABLE IF NOT EXISTS banking.branches (id INT)"},
+		},
+		{
+			name:     "quoted names and comments",
+			query:    "CREATE SCHEMA -- comment;\nIF NOT EXISTS \"bank;ing\"; SELECT 'IF NOT EXISTS;';",
+			expected: []string{"CREATE SCHEMA \nIF NOT EXISTS \"bank;ing\"", "SELECT 'IF NOT EXISTS;'"},
+		},
+		{
+			name:     "drop schema and table if exists",
+			query:    "DROP TABLE IF EXISTS banking.branches; DROP SCHEMA IF EXISTS banking;",
+			expected: []string{"DROP TABLE IF EXISTS banking.branches", "DROP SCHEMA IF EXISTS banking"},
+		},
+		{
+			name:     "function if exists followed by schema",
+			query:    "DROP FUNCTION IF EXISTS foo(); CREATE SCHEMA IF NOT EXISTS banking;",
+			expected: []string{"DROP FUNCTION IF EXISTS foo()", "CREATE SCHEMA IF NOT EXISTS banking"},
+		},
+		{
+			name:     "schema followed by function with nested if",
+			query:    "CREATE SCHEMA IF NOT EXISTS banking; CREATE FUNCTION f() RETURN INT AS BEGIN IF NOT (1 = 0) THEN RETURN 1; END IF; RETURN 0; END; SELECT 1;",
+			expected: []string{"CREATE SCHEMA IF NOT EXISTS banking", "CREATE FUNCTION f() RETURN INT AS BEGIN IF NOT (1 = 0) THEN RETURN 1; END IF; RETURN 0; END", "SELECT 1"},
+		},
+		{
+			name:     "procedural if not exists remains nested",
+			query:    "BEGIN IF NOT EXISTS (SELECT 1) THEN SELECT 2; END IF; SELECT 3; END; SELECT 4;",
+			expected: []string{"BEGIN IF NOT EXISTS (SELECT 1) THEN SELECT 2; END IF; SELECT 3; END", "SELECT 4"},
+		},
+		{
 			name:     "ignore quoted semicolons",
 			query:    "SELECT ';' AS txt; SELECT 'still;literal';",
 			expected: []string{"SELECT ';' AS txt", "SELECT 'still;literal'"},

@@ -67,8 +67,9 @@ func SplitStatements(query string) []string {
 				depth++
 			}
 		case "IF":
-			isFunctionDDLModifier := prevToken == "FUNCTION" && (nextToken == "EXISTS" || nextToken == "NOT")
-			if prevToken != "END" && !isFunctionDDLModifier {
+			isDDLModifier := (prevToken == "FUNCTION" || prevToken == "SCHEMA" || prevToken == "TABLE") &&
+				(nextToken == "EXISTS" || nextToken == "NOT")
+			if prevToken != "END" && !isDDLModifier {
 				depth++
 			}
 		case "END":
