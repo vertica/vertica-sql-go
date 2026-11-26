@@ -37,6 +37,7 @@ import (
 	"strings"
 
 	"github.com/vertica/vertica-sql-go/logger"
+	"github.com/vertica/vertica-sql-go/parse"
 )
 
 // UDSFStatementType represents the type of UDSF-related SQL statement.
@@ -158,8 +159,7 @@ func (ua *UDSFAnalyzer) hasSingleTopLevelStatement(statement string) bool {
 	inBlockComment := false
 	dollarTag := ""
 
-	depth := 0
-	prevToken := ""
+	var nesting parse.StatementNesting
 	var current strings.Builder
 
 	flushToken := func(nextTokenStart int) {
@@ -168,34 +168,7 @@ func (ua *UDSFAnalyzer) hasSingleTopLevelStatement(statement string) bool {
 		}
 
 		token := strings.ToUpper(current.String())
-		nextToken := ""
-		if nextTokenStart < len(statement) {
-			if lookaheadToken, ok := ua.nextTopLevelToken(statement, nextTokenStart); ok {
-				nextToken = lookaheadToken
-			}
-		}
-
-		switch token {
-		case "BEGIN":
-			depth++
-		case "CASE", "LOOP", "WHILE":
-			// Avoid counting the trailing keyword in END CASE/IF/LOOP/WHILE.
-			if prevToken != "END" {
-				depth++
-			}
-		case "IF":
-			// Treat FUNCTION IF EXISTS / FUNCTION IF NOT EXISTS as DDL modifiers, not block openers.
-			isFunctionDDLModifier := prevToken == "FUNCTION" && (nextToken == "EXISTS" || nextToken == "NOT")
-			if prevToken != "END" && !isFunctionDDLModifier {
-				depth++
-			}
-		case "END":
-			if depth > 0 {
-				depth--
-			}
-		}
-
-		prevToken = token
+		nesting.Consume(token, statement, nextTokenStart)
 		current.Reset()
 	}
 
@@ -287,11 +260,12 @@ func (ua *UDSFAnalyzer) hasSingleTopLevelStatement(statement string) bool {
 
 		if ch == ';' {
 			flushToken(i)
-			if depth == 0 {
+			if nesting.Depth() == 0 {
 				if _, ok := ua.nextTopLevelToken(statement, i+1); ok {
 					return false
 				}
 			}
+			nesting.EndStatement()
 			continue
 		}
 
