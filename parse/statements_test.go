@@ -52,6 +52,66 @@ func TestSplitStatements(t *testing.T) {
 			expected: []string{"DROP FUNCTION IF EXISTS foo()", "CREATE SCHEMA IF NOT EXISTS banking"},
 		},
 		{
+			name:     "sequence modifiers",
+			query:    "CREATE SEQUENCE IF NOT EXISTS s; DROP SEQUENCE IF EXISTS s; SELECT 1;",
+			expected: []string{"CREATE SEQUENCE IF NOT EXISTS s", "DROP SEQUENCE IF EXISTS s", "SELECT 1"},
+		},
+		{
+			name:     "projection and procedure modifiers",
+			query:    "DROP PROJECTION IF EXISTS p; DROP PROCEDURE IF EXISTS proc(INT); SELECT 1;",
+			expected: []string{"DROP PROJECTION IF EXISTS p", "DROP PROCEDURE IF EXISTS proc(INT)", "SELECT 1"},
+		},
+		{
+			name:     "alter table column modifiers",
+			query:    "ALTER TABLE t ADD COLUMN IF NOT EXISTS c INT; ALTER TABLE t DROP COLUMN IF EXISTS c; SELECT 1;",
+			expected: []string{"ALTER TABLE t ADD COLUMN IF NOT EXISTS c INT", "ALTER TABLE t DROP COLUMN IF EXISTS c", "SELECT 1"},
+		},
+		{
+			name:     "other ddl with comments and quoted name",
+			query:    "drop user /* comment */ if /* comment */ exists \"user;name\"; SELECT 1;",
+			expected: []string{"drop user /* comment */ if /* comment */ exists \"user;name\"", "SELECT 1"},
+		},
+		{
+			name:     "comments inside if not exists",
+			query:    "CREATE SEQUENCE IF -- comment\nNOT /* comment */ EXISTS s; SELECT 1;",
+			expected: []string{"CREATE SEQUENCE IF \nNOT /* comment */ EXISTS s", "SELECT 1"},
+		},
+		{
+			name:     "ddl and procedural if in a block",
+			query:    "BEGIN DROP SEQUENCE IF EXISTS s; IF NOT EXISTS (SELECT 1) THEN SELECT 2; END IF; SELECT 3; END; SELECT 4;",
+			expected: []string{"BEGIN DROP SEQUENCE IF EXISTS s; IF NOT EXISTS (SELECT 1) THEN SELECT 2; END IF; SELECT 3; END", "SELECT 4"},
+		},
+		{
+			name:     "explain and profile prefixes",
+			query:    "EXPLAIN DROP TABLE IF EXISTS t; PROFILE CREATE TABLE IF NOT EXISTS t (a INT); SELECT 1;",
+			expected: []string{"EXPLAIN DROP TABLE IF EXISTS t", "PROFILE CREATE TABLE IF NOT EXISTS t (a INT)", "SELECT 1"},
+		},
+		{
+			name:     "if not exists after case expression in same statement",
+			query:    "ALTER TABLE t ADD COLUMN c INT DEFAULT CASE WHEN 1 = 1 THEN 1 END, ADD COLUMN IF NOT EXISTS d INT; SELECT 1;",
+			expected: []string{"ALTER TABLE t ADD COLUMN c INT DEFAULT CASE WHEN 1 = 1 THEN 1 END, ADD COLUMN IF NOT EXISTS d INT", "SELECT 1"},
+		},
+		{
+			name:     "procedural if exists after case branch and else",
+			query:    "CREATE FUNCTION f(x INT) RETURN INT AS BEGIN CASE x WHEN 1 THEN IF EXISTS (SELECT 1) THEN RETURN 1; END IF; ELSE IF NOT EXISTS (SELECT 1) THEN RETURN 2; END IF; END CASE; RETURN 0; END; SELECT 1;",
+			expected: []string{"CREATE FUNCTION f(x INT) RETURN INT AS BEGIN CASE x WHEN 1 THEN IF EXISTS (SELECT 1) THEN RETURN 1; END IF; ELSE IF NOT EXISTS (SELECT 1) THEN RETURN 2; END IF; END CASE; RETURN 0; END", "SELECT 1"},
+		},
+		{
+			name:     "procedural if exists as first statement in loop",
+			query:    "BEGIN LOOP IF NOT EXISTS (SELECT 1) THEN EXIT; END IF; END LOOP; END; SELECT 2;",
+			expected: []string{"BEGIN LOOP IF NOT EXISTS (SELECT 1) THEN EXIT; END IF; END LOOP; END", "SELECT 2"},
+		},
+		{
+			name:     "ddl inside procedural if and else",
+			query:    "BEGIN IF EXISTS (SELECT 1) THEN DROP SEQUENCE IF EXISTS s; ELSE CREATE SEQUENCE IF NOT EXISTS s; END IF; SELECT 2; END; SELECT 3;",
+			expected: []string{"BEGIN IF EXISTS (SELECT 1) THEN DROP SEQUENCE IF EXISTS s; ELSE CREATE SEQUENCE IF NOT EXISTS s; END IF; SELECT 2; END", "SELECT 3"},
+		},
+		{
+			name:     "if not condition in ddl context is not an existence modifier",
+			query:    "CREATE FUNCTION f() RETURN INT AS IF NOT (1 = 0) THEN RETURN 1; END IF; SELECT 2;",
+			expected: []string{"CREATE FUNCTION f() RETURN INT AS IF NOT (1 = 0) THEN RETURN 1; END IF", "SELECT 2"},
+		},
+		{
 			name:     "schema followed by function with nested if",
 			query:    "CREATE SCHEMA IF NOT EXISTS banking; CREATE FUNCTION f() RETURN INT AS BEGIN IF NOT (1 = 0) THEN RETURN 1; END IF; RETURN 0; END; SELECT 1;",
 			expected: []string{"CREATE SCHEMA IF NOT EXISTS banking", "CREATE FUNCTION f() RETURN INT AS BEGIN IF NOT (1 = 0) THEN RETURN 1; END IF; RETURN 0; END", "SELECT 1"},

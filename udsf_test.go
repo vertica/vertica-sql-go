@@ -692,6 +692,17 @@ func TestUDSFAnalyzer_RejectsUDSFWhenAnotherStatementFollows(t *testing.T) {
 	}
 }
 
+func TestUDSFAnalyzer_DDLAndProceduralIfInBlock(t *testing.T) {
+	analyzer := NewUDSFAnalyzer()
+	sql := "CREATE FUNCTION f() RETURN INT AS BEGIN DROP SEQUENCE IF EXISTS s; IF NOT EXISTS (SELECT 1) THEN RETURN 1; END IF; RETURN 0; END;"
+	if !analyzer.IsUDSFStatement(sql) {
+		t.Fatal("function with nested DDL and procedural IF should remain atomic")
+	}
+	if analyzer.IsUDSFStatement(sql + " SELECT 1;") {
+		t.Fatal("function followed by another statement should not be atomic")
+	}
+}
+
 func TestUDSFAnalyzer_AllowsNestedControlFlowInBeginEndBlock(t *testing.T) {
 	analyzer := NewUDSFAnalyzer()
 

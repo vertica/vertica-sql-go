@@ -20,7 +20,7 @@ import (
 // limitations under the License.
 
 // SplitStatements breaks a SQL string into individual statements separated by semicolons
-// that are not contained within literals or comments.
+// that are not contained within literals, comments, or procedural blocks.
 func SplitStatements(query string) []string {
 	trimmed := strings.TrimSpace(query)
 	if trimmed == "" {
@@ -36,8 +36,7 @@ func SplitStatements(query string) []string {
 	inLineComment := false
 	inBlockComment := false
 	var dollarTag string
-	depth := 0
-	prevToken := ""
+	var nesting StatementNesting
 	statementHasContent := false
 	var currentToken strings.Builder
 
@@ -52,41 +51,14 @@ func SplitStatements(query string) []string {
 		}
 
 		token := strings.ToUpper(currentToken.String())
-		nextToken := ""
-		if nextTokenStart < len(query) {
-			if lookaheadToken, ok := nextTopLevelToken(query, nextTokenStart); ok {
-				nextToken = lookaheadToken
-			}
-		}
-
-		switch token {
-		case "BEGIN":
-			depth++
-		case "CASE", "LOOP", "WHILE":
-			if prevToken != "END" {
-				depth++
-			}
-		case "IF":
-			isDDLModifier := (prevToken == "FUNCTION" || prevToken == "SCHEMA" || prevToken == "TABLE") &&
-				(nextToken == "EXISTS" || nextToken == "NOT")
-			if prevToken != "END" && !isDDLModifier {
-				depth++
-			}
-		case "END":
-			if depth > 0 {
-				depth--
-			}
-		}
-
-		prevToken = token
+		nesting.Consume(token, query, nextTokenStart)
 		currentToken.Reset()
 	}
 	flush := func() {
 		statement := strings.TrimSpace(current.String())
 		current.Reset()
 		currentToken.Reset()
-		depth = 0
-		prevToken = ""
+		nesting = StatementNesting{}
 		if statement != "" && statementHasContent {
 			statements = append(statements, statement)
 		}
@@ -226,11 +198,12 @@ func SplitStatements(query string) []string {
 		}
 
 		if ch == ';' {
-			if depth == 0 {
+			if nesting.Depth() == 0 {
 				flush()
 			} else {
 				current.WriteByte(ch)
 				markNonWhitespace(ch)
+				nesting.EndStatement()
 			}
 			i++
 			continue
@@ -245,128 +218,90 @@ func SplitStatements(query string) []string {
 	return statements
 }
 
-func nextTopLevelToken(query string, start int) (string, bool) {
-	inSingleQuote := false
-	inDoubleQuote := false
-	inLineComment := false
-	inBlockComment := false
-	dollarTag := ""
+// StatementNesting tracks procedural blocks while splitting SQL. An IF that
+// is not the first token of a statement and is followed by [NOT] EXISTS is a
+// DDL existence modifier (for example DROP TABLE IF EXISTS or ADD COLUMN IF
+// NOT EXISTS), not the start of a procedural IF block. Its zero value is ready
+// for use.
+type StatementNesting struct {
+	depth            int
+	prevToken        string
+	statementStarted bool
+}
 
-	var current strings.Builder
+// Consume processes an uppercase token and its position in the SQL text.
+func (n *StatementNesting) Consume(token, query string, nextTokenStart int) {
+	midStatement := n.statementStarted
+	n.statementStarted = true
 
-	flushCurrent := func() (string, bool) {
-		if current.Len() == 0 {
-			return "", false
+	switch token {
+	case "BEGIN":
+		n.depth++
+	case "CASE", "LOOP", "WHILE":
+		if n.prevToken != "END" {
+			n.depth++
 		}
-		token := strings.ToUpper(current.String())
-		current.Reset()
-		return token, true
+	case "IF":
+		ddlModifier := midStatement && isExistenceModifier(query, nextTokenStart)
+		if n.prevToken != "END" && !ddlModifier {
+			n.depth++
+		}
+	case "END":
+		if n.depth > 0 {
+			n.depth--
+		}
 	}
 
-	for i := start; i < len(query); i++ {
-		ch := query[i]
+	n.prevToken = token
+	if token == "BEGIN" || token == "THEN" || token == "ELSE" || token == "LOOP" {
+		n.EndStatement()
+	}
+}
 
-		if inLineComment {
-			if ch == '\n' || ch == '\r' {
-				inLineComment = false
-			}
-			continue
-		}
+// EndStatement starts a new statement within the current procedural block.
+func (n *StatementNesting) EndStatement() {
+	n.statementStarted = false
+}
 
-		if inBlockComment {
-			if ch == '*' && i+1 < len(query) && query[i+1] == '/' {
+// Depth returns the number of open procedural blocks.
+func (n *StatementNesting) Depth() int {
+	return n.depth
+}
+
+func isExistenceModifier(query string, start int) bool {
+	token, next := nextModifierToken(query, start)
+	if strings.EqualFold(token, "NOT") {
+		token, _ = nextModifierToken(query, next)
+	}
+	return strings.EqualFold(token, "EXISTS")
+}
+
+func nextModifierToken(query string, start int) (string, int) {
+	i := start
+	for i < len(query) {
+		switch {
+		case unicode.IsSpace(rune(query[i])):
+			i++
+		case i+1 < len(query) && query[i:i+2] == "--":
+			i += 2
+			for i < len(query) && query[i] != '\n' && query[i] != '\r' {
 				i++
-				inBlockComment = false
 			}
-			continue
-		}
-
-		if inSingleQuote {
-			if ch == '\'' {
-				if i+1 < len(query) && query[i+1] == '\'' {
-					i++
-					continue
-				}
-				inSingleQuote = false
+		case i+1 < len(query) && query[i:i+2] == "/*":
+			end := strings.Index(query[i+2:], "*/")
+			if end < 0 {
+				return "", len(query)
 			}
-			continue
-		}
-
-		if inDoubleQuote {
-			if ch == '"' {
-				if i+1 < len(query) && query[i+1] == '"' {
-					i++
-					continue
-				}
-				inDoubleQuote = false
+			i += end + 4
+		default:
+			start = i
+			for i < len(query) && isStatementTokenChar(query[i]) {
+				i++
 			}
-			continue
-		}
-
-		if dollarTag != "" {
-			if i+len(dollarTag) <= len(query) && query[i:i+len(dollarTag)] == dollarTag {
-				i += len(dollarTag) - 1
-				dollarTag = ""
-			}
-			continue
-		}
-
-		if ch == '\'' {
-			if token, ok := flushCurrent(); ok {
-				return token, true
-			}
-			inSingleQuote = true
-			continue
-		}
-
-		if ch == '"' {
-			if token, ok := flushCurrent(); ok {
-				return token, true
-			}
-			inDoubleQuote = true
-			continue
-		}
-
-		if ch == '-' && i+1 < len(query) && query[i+1] == '-' {
-			if token, ok := flushCurrent(); ok {
-				return token, true
-			}
-			i++
-			inLineComment = true
-			continue
-		}
-
-		if ch == '/' && i+1 < len(query) && query[i+1] == '*' {
-			if token, ok := flushCurrent(); ok {
-				return token, true
-			}
-			i++
-			inBlockComment = true
-			continue
-		}
-
-		if ch == '$' {
-			if tag, length, ok := readDollarTag(query, i); ok {
-				if token, ok := flushCurrent(); ok {
-					return token, true
-				}
-				dollarTag = tag
-				i += length - 1
-				continue
-			}
-		}
-
-		if isStatementTokenChar(ch) {
-			current.WriteByte(ch)
-			continue
-		}
-
-		if token, ok := flushCurrent(); ok {
-			return token, true
+			return query[start:i], i
 		}
 	}
-
-	return flushCurrent()
+	return "", i
 }
 
 func isStatementTokenChar(ch byte) bool {

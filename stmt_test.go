@@ -343,6 +343,30 @@ func TestNewStmtAtomicClassification(t *testing.T) {
 			expectAtomic:    false,
 			expectMultiStmt: true,
 		},
+		{
+			name:            "sequence batch is multi-statement",
+			query:           `DROP SEQUENCE IF EXISTS s; SELECT 1;`,
+			expectAtomic:    false,
+			expectMultiStmt: true,
+		},
+		{
+			name:            "procedure batch is multi-statement",
+			query:           `DROP PROCEDURE IF EXISTS p(INT); SELECT 1;`,
+			expectAtomic:    false,
+			expectMultiStmt: true,
+		},
+		{
+			name:            "alter table column batch is multi-statement",
+			query:           `ALTER TABLE t ADD COLUMN IF NOT EXISTS c INT; SELECT 1;`,
+			expectAtomic:    false,
+			expectMultiStmt: true,
+		},
+		{
+			name:            "explain drop if exists batch is multi-statement",
+			query:           `EXPLAIN DROP TABLE IF EXISTS t; SELECT 1;`,
+			expectAtomic:    false,
+			expectMultiStmt: true,
+		},
 	}
 
 	for _, tc := range tests {
