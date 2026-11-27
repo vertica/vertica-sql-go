@@ -63,7 +63,7 @@ func NewFileCache(rowLimit int) (*FileCache, error) {
 		maxInMemory: rowLimit,
 		resultData:  make([]*msgs.BEDataRowMsg, 0, rowLimit),
 		file:        file,
-		rwbuffer:    bufio.NewReadWriter(bufio.NewReader(file), bufio.NewWriterSize(file, 1<<16)),
+		rwbuffer:    bufio.NewReadWriter(bufio.NewReader(file), bufio.NewWriterSize(file, 256*1024)),
 	}, nil
 }
 
@@ -106,7 +106,7 @@ func (f *FileCache) Finalize() error {
 	if err != nil {
 		return err
 	}
-	f.rwbuffer = bufio.NewReadWriter(bufio.NewReader(f.file), bufio.NewWriter(f.file))
+	f.rwbuffer = bufio.NewReadWriter(bufio.NewReaderSize(f.file, 256*1024), bufio.NewWriter(f.file))
 	return err
 }
 
@@ -132,10 +132,17 @@ func (f *FileCache) Peek() *msgs.BEDataRowMsg {
 
 // Close clears resources associated with the cache, deleting the temp file
 func (f *FileCache) Close() error {
+	if f == nil || f.file == nil {
+		return nil
+	}
 	name := f.file.Name()
-	f.rwbuffer.Flush()
-	f.file.Close()
-	return os.Remove(name)
+	_ = f.rwbuffer.Flush()
+	_ = f.file.Close()
+	f.file = nil
+	if err := os.Remove(name); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func (f *FileCache) reloadFromCache() bool {

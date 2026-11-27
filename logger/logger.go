@@ -87,6 +87,14 @@ func (l *Logger) LineTrace() {
 	}
 }
 
+func (l *Logger) IsTrace() bool {
+	return level == TRACE
+}
+
+func (l *Logger) IsDebug() bool {
+	return level <= DEBUG
+}
+
 func (l *Logger) Trace(format string, args ...interface{}) {
 	if level == TRACE {
 		l.print(TRACE, format, args...)

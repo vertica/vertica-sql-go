@@ -33,6 +33,7 @@ package rowcache
 // THE SOFTWARE.
 
 import (
+	"os"
 	"testing"
 
 	"github.com/vertica/vertica-sql-go/msgs"
@@ -97,4 +98,23 @@ func TestFileCache(t *testing.T) {
 		cache.Close()
 	})
 
+	t.Run("close cleans up file and is idempotent", func(t *testing.T) {
+		cache, err := NewFileCache(10)
+		if err != nil {
+			t.Fatalf("Unable to create temp file: %s", err)
+		}
+		fileName := cache.file.Name()
+		if _, err := os.Stat(fileName); os.IsNotExist(err) {
+			t.Fatalf("Expected temp file to exist: %s", fileName)
+		}
+		if err := cache.Close(); err != nil {
+			t.Fatalf("Expected Close to succeed: %s", err)
+		}
+		if _, err := os.Stat(fileName); !os.IsNotExist(err) {
+			t.Errorf("Expected temp file to be deleted after Close: %s", fileName)
+		}
+		if err := cache.Close(); err != nil {
+			t.Errorf("Expected second Close to be a no-op: %s", err)
+		}
+	})
 }

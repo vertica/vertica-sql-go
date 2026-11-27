@@ -77,3 +77,12 @@ func TestChunk(t *testing.T) {
 		t.Errorf("Expected 456 got %s", str)
 	}
 }
+
+func BenchmarkCreateBackEndMsgDataRow(b *testing.B) {
+	row := mockRow()
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, _ = CreateBackEndMsg('D', row)
+	}
+}
